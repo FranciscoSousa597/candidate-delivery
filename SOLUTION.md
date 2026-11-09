@@ -30,7 +30,7 @@ curl.exe -F "file=@wiremock\__files\bulk-stock.csv" http://localhost:5000/v1/ava
 curl.exe http://localhost:5000/v1/availability/imports/<jobId>
 ```
 
-The CSV can also be sent as a raw body: `--header "Content-Type: text/csv" --data-binary "@wiremock\__files\bulk-stock.csv"`.
+The upload is `multipart/form-data` with the CSV in a field named `file`, which is what `curl -F` sends.
 
 - Inspect the calls the service made: <http://localhost:8080/__admin/requests>.
 - Ready-made requests: [AvailabilityProcessor.http](src/AvailabilityProcessor/AvailabilityProcessor.http).
@@ -48,7 +48,7 @@ dotnet test
 | Route | Purpose | Responses |
 |---|---|---|
 | `POST /_dev/messages` | Test-only ingress for a `SellerInventoryChanged` event. Calls the same handler a broker consumer would. | `200` applied or skipped, `400` invalid message, `422` permanent failure, `503` transient failure |
-| `POST /v1/availability/imports` | CSV upload: multipart field `file`, or a `text/csv` body | `202` with `jobId` and `Location`, `400` no file, unreadable form body or bad header, `413` upload over the size limit, `415` wrong media type, `503` import queue full |
+| `POST /v1/availability/imports` | CSV upload as `multipart/form-data`, in a field named `file` | `202` with `jobId` and `Location`, `400` no file, unreadable form body or bad header, `413` upload over the size limit, `415` wrong media type, `503` import queue full |
 | `GET /v1/availability/imports/{jobId}` | Job status, counts and row-level results | `200`, `404` |
 | `GET /_dev/stock/{sellerId}/{productId}/{sizeId}?countryCode=PT` | Latest applied version and quantity of a stock key | `200`, `404` |
 | `GET /_dev/outbox` | Events waiting to be published again | `200` |
@@ -140,7 +140,7 @@ In production this becomes a transactional outbox. The version update and the ou
 ### Bulk imports and partial failures
 
 - **Rejected synchronously:**
-  - an unsupported media type (`415`);
+  - a request that is not `multipart/form-data` (`415`);
   - an upload over the request size limit of about 30 MB (`413`);
   - a form body that cannot be parsed, for example multipart content without a boundary (`400`);
   - no file (`400`);
@@ -281,7 +281,7 @@ As both collections grow, time grows linearly in each, and memory follows the up
 
 ## Tests
 
-`dotnet test` runs 58 tests in a few seconds, without Docker.
+`dotnet test` runs 59 tests in a few seconds, without Docker.
 
 [docs/test-traceability.md](docs/test-traceability.md) maps each requirement of the brief to the tests that check it. It also lists what no test proves yet, and the tests that I checked by breaking the code.
 
@@ -304,7 +304,7 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - an upload that gets `202` while every dependency call is held, so before any row is processed;
   - a file with two countries, which needs one snapshot request per country;
   - an event that arrives while an import job is writing the same key. The event waits, and the older row never overwrites it;
-  - uploads that cannot be read: a form body that cannot be parsed gets `400`, and a body over the size limit gets `413`. Kestrel enforces that limit, so this one test starts the application on Kestrel, with the limit lowered to 1 KB;
+  - uploads that cannot be read: a request that is not multipart gets `415`, a form body that cannot be parsed gets `400`, and a body over the size limit gets `413`. Kestrel enforces that limit, so this one test starts the application on Kestrel, with the limit lowered to 1 KB;
   - the circuit breaker: it opens after repeated failures, the next call is rejected without reaching the dependency, and it closes again once the dependency recovers;
   - an import of 200 rows against a failing Availability API, which stops calling it once the circuit opens.
 - **Event sink faults:** they are keyed on the published `eventId` (`fault-429` and `fault-503`). The service derives event IDs from the key and version, so the full flow never produces them; the publisher adapter is tested with those IDs directly.

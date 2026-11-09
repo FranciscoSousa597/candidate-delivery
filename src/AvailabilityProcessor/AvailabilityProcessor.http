@@ -75,11 +75,16 @@ Content-Type: application/json
   "sourceVersion": 1
 }
 
-### Upload the 10,000-row CSV (raw body)
+### Upload the 10,000-row CSV (multipart/form-data, field "file")
 POST {{host}}/v1/availability/imports
+Content-Type: multipart/form-data; boundary=upload
+
+--upload
+Content-Disposition: form-data; name="file"; filename="bulk-stock.csv"
 Content-Type: text/csv
 
 < ../../wiremock/__files/bulk-stock.csv
+--upload--
 
 ### Job status (paste the jobId returned by the upload)
 GET {{host}}/v1/availability/imports/00000000-0000-0000-0000-000000000000

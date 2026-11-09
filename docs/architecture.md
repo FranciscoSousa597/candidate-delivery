@@ -38,7 +38,7 @@ The design decisions behind them are described in [SOLUTION.md](../SOLUTION.md).
 | Endpoint | Input | Responses | When the work happens |
 |---|---|---|---|
 | `POST /_dev/messages` | One `SellerInventoryChanged` JSON event | `200` applied or skipped; `400` invalid message; `422` cannot be applied (unknown, inactive or disabled product); `503` dependency unavailable, retry later | Before the response |
-| `POST /v1/availability/imports` | A CSV with the columns `sellerId,productId,sizeId,countryCode,availableQuantity,sourceVersion`, sent as `multipart/form-data` (field `file`) or as a `text/csv` body | `202` with `jobId` and a `Location` header; `400` no file, unreadable form body or bad header; `413` upload over the size limit; `415` unsupported media type; `503` import queue full | In the background |
+| `POST /v1/availability/imports` | A CSV with the columns `sellerId,productId,sizeId,countryCode,availableQuantity,sourceVersion`, sent as `multipart/form-data` in a field named `file` | `202` with `jobId` and a `Location` header; `400` no file, unreadable form body or bad header; `413` upload over the size limit; `415` unsupported media type; `503` import queue full | In the background |
 | `GET /v1/availability/imports/{jobId}` | The job id returned by the upload | `200` job status; `404` unknown job | Read-only |
 
 Both stock-change endpoints validate their input with the same rules and convert it into a `StockUpdate`. After that point, the processing pipeline handles every change the same way, whichever endpoint it came from.

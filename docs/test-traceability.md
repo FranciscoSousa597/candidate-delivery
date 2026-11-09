@@ -7,7 +7,7 @@ This document maps each requirement of the brief to the tests that check it. It 
 
 I wrote the tests after the code, from my own reading of the brief. If that reading is wrong somewhere, the code and its test are wrong together and the test still passes. The tables below make the reading checkable against the brief, one requirement at a time.
 
-The suite has 38 test methods and 58 test cases. `dotnet test` runs them without Docker.
+The suite has 38 test methods and 59 test cases. `dotnet test` runs them without Docker.
 
 ## Summary
 
@@ -58,7 +58,7 @@ The suite has 38 test methods and 58 test cases. `dotnet test` runs them without
 |---|---|---|---|
 | R4.1 | CSV rows go through the same flow as single events. | Bulk-1, Bulk-2 | Covered. Rows produce the same calls and outcome codes as events, and both paths share the version state. |
 | R4.2 | The CSV has the columns `sellerId,productId,sizeId,countryCode,availableQuantity,sourceVersion`. | Csv-1, Csv-2, Bulk-1 | Covered. The tests use the provided `bulk-stock.csv`. |
-| R4.3 | Malformed requests and missing headers are rejected synchronously. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11, Csv-3 | Covered. Bulk-9 and Bulk-10 send form bodies that cannot be parsed. Bulk-11 sends a body over the request size limit. |
+| R4.3 | Malformed requests and missing headers are rejected synchronously. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11, Csv-3 | Covered. Bulk-9 sends form bodies that cannot be parsed, Bulk-10 sends requests that are not multipart, and Bulk-11 sends a body over the request size limit. |
 | R4.4 | The upload returns `202 Accepted` and a `jobId`. | Bulk-1, Bulk-2 | Covered. The tests assert `202`, the `Location` header and `statusUrl`. Bulk-1 also asserts that the body has a `jobId`, that `statusUrl` points to that id, and that the status endpoint returns the same id. |
 | R4.5 | The upload does not wait for all rows to finish. | Bulk-6 | Covered. The test holds every call to the dependencies. The upload still answers `202`, and the job status shows 10,000 rows, none of them processed, and no write. |
 | R4.6 | The status endpoint returns the job state, the total, processed, succeeded and failed row counts, and row-level errors. | Bulk-1, Bulk-2, Bulk-6 | Covered. Bulk-6 reads the status while the job is still `Queued` or `Running`. |
@@ -102,7 +102,7 @@ The brief leaves these points open, or asks the candidate to decide and document
 | D6 | The version is recorded after a successful write and before publishing. A failed publish leaves the update applied, and the event waits in an in-memory outbox for a later relay. | The case must be described. | Dev-9, Proc-6, Proc-7 |
 | D7 | The output `eventId` is deterministic per stock key and version. `causationId` carries the inbound `eventId`. | Nothing. | Dev-1, Dev-9, Proc-9 |
 | D8 | Retry policy: only transient failures are retried, `Retry-After` is honoured, and the number of attempts is bounded. | Retry behaviour must be described. | Dev-7, Dev-8, Pub-1 |
-| D9 | Uploads are accepted as `multipart/form-data` (field `file`) or as a `text/csv` body. A missing file, a form body that cannot be parsed or a bad header gets `400`. A body over the request size limit gets `413`. Another media type gets `415`. | Malformed requests are rejected synchronously. The format and the status codes are not given. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11 |
+| D9 | Uploads are accepted as `multipart/form-data`, with the CSV in a field named `file`. A missing file, a form body that cannot be parsed or a bad header gets `400`. A body over the request size limit gets `413`. A request that is not multipart gets `415`. | Malformed requests are rejected synchronously. The format and the status codes are not given. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11 |
 | D10 | CSV parsing: columns are matched by header name in any order, CRLF and blank lines are accepted, quoted fields follow RFC 4180, and a repeated column name rejects the file. | The column names only. | Csv-1, Csv-3, Csv-5 |
 | D11 | An invalid row fails on its own and keeps its line number. It does not reject the file. | The status must include row-level errors. | Csv-4, Bulk-2 |
 | D12 | An unknown job id gets `404`. | Nothing. | Bulk-5 |
@@ -188,7 +188,7 @@ A test that cannot fail proves nothing. For each row below, I changed the code s
 
 Notes on these runs:
 
-- The suite had 52 cases at the time. Bulk-9, Bulk-10 and Bulk-11 were added later, together with the fix they cover, so they are not part of these runs. I wrote them before the fix and ran them against the code without it: all four cases failed, because the service answered `500`.
+- The suite had 52 cases at the time. Bulk-9, Bulk-10 and Bulk-11 were added later, together with the fix they cover, so they are not part of these runs. I wrote them before the fix and ran them against the code without it: all four cases failed, because the service answered `500`. Bulk-10 changed afterwards: uploads became multipart only, and it now checks the `415` for every other media type.
 - Each run used all 52 cases, with two exceptions:
   - **The upload waits for the job:** I ran Bulk-6 alone, and then the 50 cases other than Bulk-6 and Bulk-8. All 50 passed, so no earlier test noticed a synchronous upload. I did not run Bulk-8 with this change.
   - **The snapshot is requested once per row:** I ran Bulk-7 alone. With this change, the tests that import the provided file would request the snapshot 10,000 times.
@@ -240,20 +240,20 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Proc-8 | `Event_arriving_while_a_bulk_row_for_the_same_key_is_in_flight_is_never_overwritten_by_the_older_row` | 1 | R5.4, R5.15 | None |
 | Proc-9 | `Output_eventId_is_deterministic_per_stock_key_and_version` | 1 | R5.13 | D7 |
 
-### `BulkImportEndpointTests` (Bulk): 12 methods, 15 cases
+### `BulkImportEndpointTests` (Bulk): 12 methods, 16 cases
 
 | ID | Test | Cases | Requirements | Decisions |
 |---|---|---|---|---|
 | Bulk-1 | `Provided_fixture_is_imported_asynchronously_with_one_snapshot_request_and_reimporting_it_is_a_no_op` | 1 | R4.1, R4.2, R4.4, R4.6, R4.8, R4.9, R4.10 | D4, D5 |
 | Bulk-2 | `Mixed_upload_reports_partial_failures_per_row_and_never_overwrites_newer_stock` | 1 | R3.7, R4.1, R4.4, R4.6, R4.7, R4.8, R5.2, R5.3, R5.5, R5.6, R5.7, R5.11 | D3, D4, D5, D11, D13 |
-| Bulk-3 | `Malformed_uploads_are_rejected_synchronously` | 3 | R4.3 | D9 |
+| Bulk-3 | `Malformed_uploads_are_rejected_synchronously` | 2 | R4.3 | D9 |
 | Bulk-4 | `Multipart_request_without_a_file_is_rejected` | 1 | R4.3 | D9 |
 | Bulk-5 | `Unknown_job_returns_404` | 1 | None | D12 |
 | Bulk-6 | `Upload_is_accepted_before_any_row_is_processed` | 1 | R4.5, R4.6 | None |
 | Bulk-7 | `Upload_with_several_countries_requests_one_snapshot_per_country` | 1 | R4.8 | D3, D5 |
 | Bulk-8 | `Newer_event_arriving_while_an_import_is_writing_the_same_key_is_never_overwritten_by_the_older_row` | 1 | R5.4, R5.15 | D1, D13 |
 | Bulk-9 | `Form_body_that_cannot_be_parsed_is_rejected_with_400` | 2 | R4.3 | D9 |
-| Bulk-10 | `Csv_sent_as_a_url_encoded_form_is_rejected_with_400` | 1 | R4.3 | D9 |
+| Bulk-10 | `Upload_that_is_not_multipart_is_rejected_with_415` | 3 | R4.3 | D9 |
 | Bulk-11 | `Upload_larger_than_the_request_size_limit_is_rejected_with_413` | 1 | R4.3 | D9 |
 | Bulk-12 | `Import_against_a_failing_dependency_stops_calling_it_and_reports_the_rows_as_retryable` | 1 | R5.15 | D14 |
 

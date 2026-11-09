@@ -77,7 +77,7 @@ public sealed class BulkImportEndpointTests : IDisposable
             "seller-503,style-2,size-36,PT,4,1\n" +          // line 8: Availability API keeps answering 503
             "seller-005,style-3,size-38,PT,not-a-number,1\n"; // line 9: invalid row
 
-        var response = await _client.PostAsync("/v1/availability/imports", new StringContent(csv, Encoding.UTF8, "text/csv"));
+        var response = await UploadCsv(csv);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         var job = await WaitForCompletion(response);
 
@@ -108,14 +108,13 @@ public sealed class BulkImportEndpointTests : IDisposable
     }
 
     [Theory]
-    [InlineData("sellerId,productId,sizeId,countryCode,availableQuantity\nseller-1,style-1,size-34,PT,1", "text/csv", HttpStatusCode.BadRequest)]
-    [InlineData("", "text/csv", HttpStatusCode.BadRequest)]
-    [InlineData("{\"rows\":[]}", "application/json", HttpStatusCode.UnsupportedMediaType)]
-    public async Task Malformed_uploads_are_rejected_synchronously(string body, string mediaType, HttpStatusCode expected)
+    [InlineData("sellerId,productId,sizeId,countryCode,availableQuantity\nseller-1,style-1,size-34,PT,1")] // no sourceVersion column
+    [InlineData("")]                                                                                       // empty file
+    public async Task Malformed_uploads_are_rejected_synchronously(string csv)
     {
-        var response = await _client.PostAsync("/v1/availability/imports", new StringContent(body, Encoding.UTF8, mediaType));
+        var response = await UploadCsv(csv);
 
-        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(_app.Dependencies.Requests);
     }
 
@@ -143,17 +142,18 @@ public sealed class BulkImportEndpointTests : IDisposable
         Assert.Empty(_app.Dependencies.Requests);
     }
 
-    [Fact]
-    public async Task Csv_sent_as_a_url_encoded_form_is_rejected_with_400()
+    [Theory]
+    [InlineData("text/csv")]                          // the CSV as the request body, not as a file in a form
+    [InlineData("application/json")]
+    [InlineData("application/x-www-form-urlencoded")] // what curl --data-binary sends when no Content-Type is given
+    public async Task Upload_that_is_not_multipart_is_rejected_with_415(string mediaType)
     {
-        // curl --data-binary sends application/x-www-form-urlencoded unless a Content-Type is given,
-        // and the form parser cannot read a CSV file as a form.
         using var content = new ByteArrayContent(await File.ReadAllBytesAsync(TestData.BulkCsv));
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+        content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
 
         var response = await _client.PostAsync("/v1/availability/imports", content);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
         Assert.Empty(_app.Dependencies.Requests);
     }
 
@@ -171,8 +171,7 @@ public sealed class BulkImportEndpointTests : IDisposable
         app.StartServer();
         using var client = app.CreateClient();
 
-        var response = await client.PostAsync(
-            "/v1/availability/imports", new StringContent(new string('x', 4096), Encoding.UTF8, "text/csv"));
+        var response = await client.PostAsync("/v1/availability/imports", CsvForm(new string('x', 4096)));
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
         Assert.Empty(app.Dependencies.Requests);
@@ -191,8 +190,7 @@ public sealed class BulkImportEndpointTests : IDisposable
             csv.Append($"seller-{row:D3},style-{row},size-34,PT,1,1\n");
         }
 
-        var response = await _client.PostAsync("/v1/availability/imports", new StringContent(csv.ToString(), Encoding.UTF8, "text/csv"));
-        var job = await WaitForCompletion(response);
+        var job = await WaitForCompletion(await UploadCsv(csv.ToString()));
 
         Assert.Equal(ImportJobStatus.CompletedWithErrors, job.Status);
         Assert.Equal((200, 0, 200), (job.TotalRows, job.SucceededRows, job.FailedRows));
@@ -242,7 +240,7 @@ public sealed class BulkImportEndpointTests : IDisposable
             "seller-002,style-2,size-36,ES,4,1\n" + // line 5
             "seller-003,style-3,size-38,PT,2,1\n";  // line 6
 
-        var response = await _client.PostAsync("/v1/availability/imports", new StringContent(csv, Encoding.UTF8, "text/csv"));
+        var response = await UploadCsv(csv);
         var job = await WaitForCompletion(response);
 
         Assert.Equal(
@@ -281,7 +279,7 @@ public sealed class BulkImportEndpointTests : IDisposable
         const string csv =
             "sellerId,productId,sizeId,countryCode,availableQuantity,sourceVersion\n" +
             "boutique-42,style-123,size-38,PT,10,7\n";
-        var upload = await _client.PostAsync("/v1/availability/imports", new StringContent(csv, Encoding.UTF8, "text/csv"));
+        var upload = await UploadCsv(csv);
         await rowWriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(ImportJobStatus.Running, (await GetJob(upload)).Status);
 
@@ -323,6 +321,12 @@ public sealed class BulkImportEndpointTests : IDisposable
 
     private async Task<ImportJobView> GetJob(HttpResponseMessage accepted) =>
         (await _client.GetFromJsonAsync<ImportJobView>(accepted.Headers.Location!.ToString(), Json))!;
+
+    private Task<HttpResponseMessage> UploadCsv(string csv) => _client.PostAsync("/v1/availability/imports", CsvForm(csv));
+
+    /// <summary>The CSV as a file in a multipart/form-data body, the only upload format the service accepts.</summary>
+    private static MultipartFormDataContent CsvForm(string csv) =>
+        new() { { new StringContent(csv, Encoding.UTF8, "text/csv"), "file", "stock.csv" } };
 
     private async Task<HttpResponseMessage> UploadFixture()
     {
