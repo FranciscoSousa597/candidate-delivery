@@ -16,8 +16,8 @@ public static class DevEndpoints
     {
         app.MapPost("/_dev/messages", ReceiveMessageAsync);
         app.MapGet("/_dev/stock/{sellerId}/{productId}/{sizeId}", GetStockAsync);
-        app.MapGet("/_dev/outbox", (PendingEventOutbox outbox) =>
-            Results.Ok(new { pending = outbox.PendingCount, events = outbox.Snapshot() }));
+        app.MapGet("/_dev/outbox", async (IEventOutbox outbox, CancellationToken ct) =>
+            Results.Ok(new { pending = await outbox.CountPendingAsync(ct), events = await outbox.GetPendingAsync(limit: 100, ct) }));
         return app;
     }
 

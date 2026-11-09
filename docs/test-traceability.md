@@ -7,7 +7,7 @@ This document maps each requirement of the brief to the tests that check it. It 
 
 I wrote the tests after the code, from my own reading of the brief. If that reading is wrong somewhere, the code and its test are wrong together and the test still passes. The tables below make the reading checkable against the brief, one requirement at a time.
 
-The suite has 38 test methods and 60 test cases. `dotnet test` runs them without Docker.
+The suite has 43 test methods and 65 test cases. `dotnet test` runs them without Docker.
 
 ## Summary
 
@@ -18,7 +18,7 @@ The suite has 38 test methods and 60 test cases. `dotnet test` runs them without
 | Partly covered | 1 |
 | Not covered | 0 |
 | Documented, not a matter for a test | 2 |
-| Decisions pinned by tests | 14 |
+| Decisions pinned by tests | 15 |
 | Gaps closed by a test | 6 |
 | Open gaps | 5 |
 
@@ -45,7 +45,7 @@ The suite has 38 test methods and 60 test cases. `dotnet test` runs them without
 | R3.2 | The endpoint calls the same processing path as a real consumer adapter. | None | Documented (G11). |
 | R3.3 | The event is validated, and `countryCode` is a two-letter code. | Dev-4, Dev-5, Csv-4 | Covered. Csv-4 checks the same rules on CSV rows. |
 | R3.4 | A repeated delivery, or a replay with a new `eventId`, has no second effect. | Dev-2, Proc-2 | Covered. |
-| R3.5 | An older version that arrives late does not replace a newer one. | Dev-3, Proc-3 | Covered. |
+| R3.5 | An older version that arrives late does not replace a newer one. | Dev-3, Dev-11, Proc-3, Store-2 | Covered. Dev-11 checks it after a restart of the service. |
 | R3.6 | Product context is read with `GET /v1/products/{productId}/sizes/{sizeId}?countryCode=`. | Dev-1 | Covered. |
 | R3.7 | Unknown, inactive and country-disabled products have a defined behaviour. | Dev-6, Proc-5, Bulk-2 | Covered. The behaviour itself is decision D3. |
 | R3.8 | Stock is written with `PUT /v1/availability/{sellerId}/{productId}/{sizeId}?countryCode=`, with `availableQuantity` and `sourceVersion`. | Dev-1 | Covered. |
@@ -85,7 +85,7 @@ The suite has 38 test methods and 60 test cases. `dotnet test` runs them without
 | R5.11 | The Availability API can fail transiently. | Dev-7, Proc-6, Bulk-2 | Covered. |
 | R5.12 | The event sink can fail transiently. | Pub-1, Dev-9, Proc-7 | Covered. |
 | R5.13 | Retry and idempotency behaviour is described. | Dev-7, Dev-8, Proc-2, Proc-6, Proc-9 | Covered, and described in SOLUTION.md. |
-| R5.14 | The case where the write succeeds and publishing fails is described. | Dev-9, Proc-7 | Covered, and described in SOLUTION.md. |
+| R5.14 | The case where the write succeeds and publishing fails is described. | Dev-9, Dev-12, Proc-7 | Covered, and described in SOLUTION.md. Dev-12 checks that the waiting event survives a restart. |
 | R5.15 | Concurrency and flow control are described. The brief states that no load test is required. | Proc-8, Bulk-8, Dev-10, Bulk-12 | Partly (G8). The per-key lock and the circuit breaker are tested. The import queue limit, the row parallelism and the per-dependency limiter are only described. |
 
 ## 2. Decisions the brief leaves open
@@ -99,15 +99,16 @@ The brief leaves these points open, or asks the candidate to decide and document
 | D3 | Unknown, inactive and country-disabled products are permanent failures: no write, no event, not retryable. | "Decide and document". | Dev-6, Proc-5, Bulk-2, Bulk-7 |
 | D4 | Duplicate and stale updates are `Skipped`, not failed. In a job they count in `skippedRows`, and the job still ends as `Completed`. | "Document whether stale rows are reported as skipped or failed". | Dev-2, Dev-3, Proc-2, Proc-3, Bulk-1, Bulk-2 |
 | D5 | Partial failures: the job ends as `CompletedWithErrors`. `rowResults` gives the line, outcome, code and retryable flag of each row that was not applied. The list is capped at 1,000 entries and `rowResultsTruncated` signals the cap. The counts are always exact. | "Define and document how partial failures are reported". | Bulk-1, Bulk-2, Bulk-7 |
-| D6 | The version is recorded after a successful write and before publishing. A failed publish leaves the update applied, and the event waits in an in-memory outbox for a later relay. | The case must be described. | Dev-9, Proc-6, Proc-7 |
+| D6 | The version is recorded after a successful write and before publishing. The version and the output event are stored in one transaction. A failed publish leaves the update applied, and the event waits in the outbox for the relay. | The case must be described. | Dev-9, Dev-12, Proc-6, Proc-7, Store-1 |
 | D7 | The output `eventId` is deterministic per stock key and version. `causationId` carries the inbound `eventId`. | Nothing. | Dev-1, Dev-9, Proc-9 |
 | D8 | Retry policy: only transient failures are retried, `Retry-After` is honoured, and the number of attempts is bounded. | Retry behaviour must be described. | Dev-7, Dev-8, Pub-1 |
 | D9 | Uploads are accepted as `multipart/form-data`, with the CSV in a field named `file`. A missing file, a form body that cannot be parsed or a bad header gets `400`. A body over the request size limit gets `413`. A request that is not multipart gets `415`. | Malformed requests are rejected synchronously. The format and the status codes are not given. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11 |
 | D10 | CSV parsing: columns are matched by header name in any order, CRLF and blank lines are accepted, quoted fields follow RFC 4180, and a repeated column name rejects the file. The CsvHelper library does the parsing. A row with broken quoting fails on its own. | The column names only. | Csv-1, Csv-3, Csv-4, Csv-5 |
 | D11 | An invalid row fails on its own and keeps its line number. It does not reject the file. | The status must include row-level errors. | Csv-4, Bulk-2 |
 | D12 | An unknown job id gets `404`. | Nothing. | Bulk-5 |
-| D13 | Two helper routes exist for inspection: `GET /_dev/stock/...` and `GET /_dev/outbox`. | Nothing. | Used by Dev-3, Dev-7, Dev-9, Bulk-2 and Bulk-8 |
+| D13 | Two helper routes exist for inspection: `GET /_dev/stock/...` and `GET /_dev/outbox`. | Nothing. | Used by Dev-3, Dev-7, Dev-9, Dev-12, Bulk-2 and Bulk-8 |
 | D14 | Each dependency has a circuit breaker. When at least half of 20 or more calls in 30 seconds fail, calls are rejected for 5 seconds without being sent, and then one trial call decides whether the circuit closes. | The solution must avoid overwhelming dependencies during a burst or a large upload. How is not given. | Dev-10, Bulk-12 |
+| D15 | The applied versions and the outbox are stored in a SQLite database, so they survive a restart. A version that is not higher never replaces the stored one. | "You choose the internal architecture, persistence, and production broker." | Dev-11, Dev-12, Store-1, Store-2, Store-3 |
 
 ## 3. Gaps
 
@@ -120,7 +121,7 @@ No test proves the points below. Each row names the test that would close the ga
 | G7 | Snapshot failures. When the snapshot request keeps failing, the rows of that country fail as `ProductContextUnavailable` and are retryable. | R5.9 and R5.10, applied to the snapshot. The mock has no fault input for the snapshot. | Make the fake snapshot route answer `503`. Assert the row results and the `CompletedWithErrors` status. | Small |
 | G8 | Flow control: a full import queue answers `503`, at most 8 stock keys are processed in parallel, and each dependency has a concurrency limit. | R5.15. The brief asks for a description only. | Fill the queue with held jobs and assert that the next upload gets `503`. Add a counter of concurrent calls to the fake. | Medium |
 | G9 | The job state `Failed`, on shutdown or on an unexpected error. | D5 | Stop the worker during a job and assert the status. | Medium |
-| G10 | The timer loop of `OutboxRelayService`. The tests call `PendingEventOutbox.FlushAsync` directly. | D6 | Run the application with a short `Outbox:RelayInterval` and wait for the event to reach the sink. | Small |
+| G10 | The timer loop of `OutboxRelayService`. The tests call `OutboxRelay.PublishPendingAsync` directly. | D6 | Run the application with a short `Outbox:RelayInterval` and wait for the event to reach the sink. | Small |
 | G11 | A real consumer uses the same processing path. | R3.2 | Not testable as behaviour. `DevEndpoints` only calls `SellerInventoryChangedHandler` and maps its result to a status code. A second adapter that calls the same handler would demonstrate it. | Not applicable |
 
 ### 3.2 Closed gaps
@@ -145,7 +146,9 @@ The first version of this document listed six more gaps, each tied to a requirem
 - The tests read the provided fixtures from `wiremock/__files`: `sample-event.json`, `bulk-stock.csv` and `product-contexts-PT.json`.
 - Bulk-6 and Bulk-8 hold a dependency call on purpose, through the `BeforeRespond` hook of the fake. This lets a test observe the service while that call is in flight.
 - Bulk-11 is the only test that runs on Kestrel instead of the in-memory test server. Kestrel is what enforces the request size limit, so the test starts it on a free port with the limit lowered to 1 KB.
-- **Processor tests** (`Proc`) use hand-written fakes for the gateway, the publisher and the context source. They test the rules, not HTTP.
+- Each application has its own SQLite database, in memory. Dev-11 and Dev-12 use a database file instead, shared by two instances of the application, one after the other, to reproduce a restart.
+- **Processor tests** (`Proc`) use hand-written fakes for the gateway, the publisher and the context source, and a SQLite database in memory. They test the rules, not HTTP.
+- **Store tests** (`Store`) call `SqliteStockStore` directly, with a database in memory.
 - **CSV tests** (`Csv`) call the parser directly.
 
 ### 4.2 Fault inputs from the mock reference in the README
@@ -188,6 +191,7 @@ A test that cannot fail proves nothing. For each row below, I changed the code s
 
 Notes on these runs:
 
+- These runs predate the circuit breaker, the CsvHelper parser and the SQLite store: the service then kept its versions in memory. I did not repeat them afterwards.
 - The suite had 52 cases at the time. Bulk-9, Bulk-10 and Bulk-11 were added later, together with the fix they cover, so they are not part of these runs. I wrote them before the fix and ran them against the code without it: all four cases failed, because the service answered `500`. Bulk-10 changed afterwards: uploads became multipart only, and it now checks the `415` for every other media type.
 - Each run used all 52 cases, with two exceptions:
   - **The upload waits for the job:** I ran Bulk-6 alone, and then the 50 cases other than Bulk-6 and Bulk-8. All 50 passed, so no earlier test noticed a synchronous upload. I did not run Bulk-8 with this change.
@@ -211,7 +215,7 @@ Notes on these runs:
 
 All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of test cases the method runs.
 
-### `DevMessagesEndpointTests` (Dev): 10 methods, 15 cases
+### `DevMessagesEndpointTests` (Dev): 12 methods, 17 cases
 
 | ID | Test | Cases | Requirements | Decisions |
 |---|---|---|---|---|
@@ -225,6 +229,8 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Dev-8 | `Retry_After_is_honoured_and_a_recovered_dependency_succeeds` | 1 | R5.9, R5.13 | D8 |
 | Dev-9 | `Publish_failure_after_the_write_is_acknowledged_and_the_event_is_relayed_later` | 1 | R5.12, R5.14 | D1, D6, D7, D13 |
 | Dev-10 | `Circuit_opens_after_repeated_failures_and_closes_again_when_the_dependency_recovers` | 1 | R5.15 | D14 |
+| Dev-11 | `Applied_version_survives_a_restart_so_an_older_event_is_still_skipped` | 1 | R3.5 | D15 |
+| Dev-12 | `Event_waiting_in_the_outbox_survives_a_restart_and_is_published_afterwards` | 1 | R5.14 | D6, D13, D15 |
 
 ### `StockUpdateProcessorTests` (Proc): 9 methods, 14 cases
 
@@ -273,3 +279,11 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 |---|---|---|---|---|
 | Pub-1 | `Sink_fault_eventIds_are_retried_then_surface_as_transient_failures` | 2 | R5.12 | D8 |
 | Pub-2 | `Normal_event_is_accepted_by_the_sink` | 1 | R3.9 | None |
+
+### `SqliteStockStoreTests` (Store): 3 methods, 3 cases
+
+| ID | Test | Cases | Requirements | Decisions |
+|---|---|---|---|---|
+| Store-1 | `Applied_version_and_its_event_are_stored_together_and_the_event_leaves_once_published` | 1 | None | D6, D15 |
+| Store-2 | `Version_that_is_not_higher_never_replaces_the_stored_one` | 1 | R3.5 | D15 |
+| Store-3 | `Unknown_key_has_no_applied_version` | 1 | None | D15 |

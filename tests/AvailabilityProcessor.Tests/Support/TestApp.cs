@@ -18,6 +18,9 @@ public sealed class TestApp : WebApplicationFactory<Program>
 
         // The outbox relay is driven explicitly by the tests that need it.
         ["Outbox:RelayInterval"] = "01:00:00",
+
+        // Each application gets its own database, in memory, so tests do not share state or leave files behind.
+        ["Storage:ConnectionString"] = "Data Source=:memory:",
     };
 
     public TestApp()

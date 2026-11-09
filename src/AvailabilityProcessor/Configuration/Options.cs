@@ -82,6 +82,18 @@ public sealed class OutboxOptions
 {
     public const string Section = "Outbox";
 
-    /// <summary>How often the relay retries events whose publication failed.</summary>
+    /// <summary>How often the relay publishes the events that are still waiting in the outbox.</summary>
     public TimeSpan RelayInterval { get; set; } = TimeSpan.FromSeconds(10);
+}
+
+public sealed class StorageOptions
+{
+    public const string Section = "Storage";
+
+    /// <summary>
+    /// SQLite connection string of the database with the applied versions and the outbox. A relative file is
+    /// created in the working directory. "Data Source=:memory:" keeps the state for one run only.
+    /// </summary>
+    [Required]
+    public string ConnectionString { get; set; } = "Data Source=availability.db";
 }

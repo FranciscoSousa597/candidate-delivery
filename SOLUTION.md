@@ -36,6 +36,9 @@ The upload is `multipart/form-data` with the CSV in a field named `file`, which 
 - Ready-made requests: [AvailabilityProcessor.http](src/AvailabilityProcessor/AvailabilityProcessor.http).
 - All settings (dependency URLs, retries, parallelism) are in [appsettings.json](src/AvailabilityProcessor/appsettings.json).
 - The service calls the mocks at `http://127.0.0.1:8080`, not `localhost`. Compose publishes the port on 127.0.0.1 only, and on Windows `localhost` resolves to `::1` first, which adds about 2 s to every new connection.
+- The service keeps its state in a SQLite file, `src/AvailabilityProcessor/availability.db`, created on the first run. The state survives a restart: the sample event sent again after a restart is skipped as a duplicate. Restarting WireMock clears its request journal, not this state.
+  - To start from scratch, stop the service and delete `availability.db` (and `availability.db-wal` and `availability.db-shm`, if present).
+  - To keep the state for one run only, start the service with `--Storage:ConnectionString "Data Source=:memory:"`.
 
 Run the tests (Docker is not needed):
 
@@ -51,7 +54,7 @@ dotnet test
 | `POST /v1/availability/imports` | CSV upload as `multipart/form-data`, in a field named `file` | `202` with `jobId` and `Location`, `400` no file, unreadable form body or bad header, `413` upload over the size limit, `415` wrong media type, `503` import queue full |
 | `GET /v1/availability/imports/{jobId}` | Job status, counts and row-level results | `200`, `404` |
 | `GET /_dev/stock/{sellerId}/{productId}/{sizeId}?countryCode=PT` | Latest applied version and quantity of a stock key | `200`, `404` |
-| `GET /_dev/outbox` | Events waiting to be published again | `200` |
+| `GET /_dev/outbox` | Events that are waiting in the outbox to be published | `200` |
 
 The status codes of `POST /_dev/messages` mirror what a broker consumer would do with the message: `200` ack, `400` dead-letter (poison message), `422` dead-letter or park, `503` do not ack, so it is redelivered later.
 
@@ -70,15 +73,16 @@ POST /v1/availability/imports ─► 202 + jobId          StockUpdateProcessor (
         ▼                                               2. product context ◄─ single lookup (events)
   ImportQueue ─► ImportWorker ─► ImportJobRunner ─────►                    ◄─ country snapshot (bulk)
                  validate rows, 1 snapshot per          3. PUT availability
-                 country, rows in parallel              4. record the applied version
+                 country, rows in parallel              4. record version + event (one transaction)
                                                         5. publish SizeAvailabilityUpdated
-                                                           (outbox + relay if publishing fails)
+                                                           (the relay retries it from the outbox)
 ```
 
 | Folder (`src/AvailabilityProcessor`) | Contents |
 |---|---|
 | `Domain` | `StockKey`, `StockUpdate`, validation rules shared by both inputs, `ProcessingResult` |
-| `Processing` | `StockUpdateProcessor` (the shared flow), applied-version store, per-key lock, outbox and relay |
+| `Processing` | `StockUpdateProcessor` (the shared flow), the interfaces of the version store and the outbox, the per-key lock and the outbox relay |
+| `Persistence` | `SqliteStockStore`: the applied versions and the outbox, in one SQLite database |
 | `Messaging` | `SellerInventoryChangedHandler`, the entry point for inbound messages |
 | `Imports` | The CSV format (parsed with the CsvHelper library), import job state, queue, worker and runner |
 | `Dependencies` | HTTP clients for the three dependencies and their resilience pipeline |
@@ -88,7 +92,7 @@ POST /v1/availability/imports ─► 202 + jobId          StockUpdateProcessor (
 
 ### Versions, duplicates and stale updates
 
-- The stock key is `(sellerId, productId, sizeId, countryCode)`. A store keeps the latest **successfully applied** `sourceVersion` (and quantity) per key. Events and CSV rows share it.
+- The stock key is `(sellerId, productId, sizeId, countryCode)`. A store keeps the latest **successfully applied** `sourceVersion` (and quantity) per key, in a SQLite database, so it survives a restart. Events and CSV rows share it.
 - Lower version than the applied one: skipped as `StaleVersion`. Same version: skipped as `DuplicateVersion`, which covers redeliveries and replays even when they carry a new `eventId`. Higher version: applied.
 - `eventId` is not used for de-duplication, because a replay may change it. It is kept as `causationId` on the output event for tracing.
 - The version check, the availability write and the version update run under a **per-key lock** (one semaphore per stock key, kept in memory for the life of the process). An event and a bulk row for the same key cannot interleave, even while a job is running. Without the lock, v7 could reach the gateway after v8; a test reproduces that race.
@@ -132,10 +136,12 @@ Trade-offs:
 ### Gateway write succeeded, but publishing failed
 
 1. The version is recorded right after the successful write. Otherwise an older update could pass the version check later and overwrite the stock.
-2. Publishing is not cancelled when the caller goes away, because the stock has already changed.
-3. If publishing still fails after its retries, the event is stored in the outbox. `OutboxRelayService` retries it every 10 s with the **same** `eventId`. The result is `Applied` with `eventPublished: false`, and the message is acknowledged. A redelivery is a duplicate and does not write again.
+2. The output event is stored in the outbox in the same database transaction as the version (a transactional outbox). Either both are stored or neither is, so an applied version always has its event, even if the service crashes at that moment.
+3. The service then publishes the event straight away, and removes it from the outbox once the sink has accepted it. Publishing is not cancelled when the caller goes away, because the stock has already changed.
+4. If publishing still fails after its retries, the event stays in the outbox. `OutboxRelayService` publishes the waiting events every 10 s, with the **same** `eventId`. The result is `Applied` with `eventPublished: false`, and the message is acknowledged. A redelivery is a duplicate and does not write again.
+5. Before it publishes an event, the relay takes the lock of that event's stock key, as the processor does. An event is therefore never published by both at the same moment.
 
-In production this becomes a transactional outbox. The version update and the outbox row are committed in one database transaction, and a relay (or change data capture) publishes the rows. Delivery is at-least-once, so consumers de-duplicate by `eventId` and keep the highest `sourceVersion` per key, since a parked v7 may arrive after v8.
+Delivery is at-least-once. If the service crashes after the sink accepted an event and before the event left the outbox, the relay publishes it again after the restart, with the same `eventId`. Consumers de-duplicate by `eventId` and keep the highest `sourceVersion` per key, since a waiting v7 may arrive after v8.
 
 ### Bulk imports and partial failures
 
@@ -153,7 +159,7 @@ In production this becomes a transactional outbox. The version update and the ou
   2. Its context comes from the snapshot.
   3. It goes through the same `StockUpdateProcessor`.
 - **Counts:** `processedRows = succeededRows + skippedRows + failedRows`.
-  - **Succeeded:** written, and the event was published or queued in the outbox.
+  - **Succeeded:** written. The event was published, or it is waiting in the outbox for the relay.
   - **Skipped:** stale and duplicate rows. These are not errors: the stock already holds an equal or newer version, and a stale row never causes a write or an event.
   - **Failed:** invalid row, unknown, inactive or disabled product, or a dependency failure after retries. `retryable` says whether submitting the row again can help.
 - **`rowResults`** lists every row that was not applied. Each entry has the line number in the file (the header is line 1), the outcome, a code, a message and `retryable`. The list is capped at 1,000 entries (`rowResultsTruncated` says when the cap was hit), but the counts are always exact.
@@ -190,50 +196,52 @@ Abridged status of a mixed file (from the tests):
 
 ## Crashes, restarts and atomicity
 
-All state lives in memory. That is acceptable for the exercise, but not for production. This section covers three things: what a crash loses today, which steps are atomic, and what production would add.
+The applied versions and the outbox are stored in SQLite, so they survive a crash or a restart. The import jobs and the key locks are in memory. This section covers three things: what a crash loses, which steps are atomic, and what production would add.
 
-### What a crash or restart loses today
+### What a crash or restart keeps and loses
 
-| In memory | After a crash or restart | Effect |
-|---|---|---|
-| Applied versions | Forgotten | **The most serious gap.** An older message that arrives after the restart is accepted as new and can overwrite newer stock in the Availability API. |
-| Outbox (events waiting to be published) | Lost | Those events are never published. Consumers miss the change until a newer version of the same key arrives. |
-| Running import job | Stops part-way | Some rows are applied and some are not. The job disappears, so its status endpoint returns `404`. |
-| Queued import jobs | Lost, with their file content | The files must be uploaded again. |
-| Event being processed | The HTTP request fails | Sending it again is safe. If the `PUT` had already happened, it is repeated with the same version. |
+| State | Stored in | After a crash or restart | Effect |
+|---|---|---|---|
+| Applied versions | SQLite | Kept | An older message that arrives after the restart is still skipped. |
+| Outbox (events waiting to be published) | SQLite | Kept | The relay publishes the waiting events after the restart. |
+| Running import job | Memory | Stops part-way | Some rows are applied and some are not. The job disappears, so its status endpoint returns `404`. Uploading the file again is safe: the rows that were applied are skipped. |
+| Queued import jobs | Memory | Lost, with their file content | The files must be uploaded again. |
+| Event being processed | Not stored | The HTTP request fails | Sending it again is safe. If the `PUT` had already happened, it is repeated with the same version. |
 
 A graceful shutdown marks the running job `Failed`, but that status is also lost when the process exits.
 
+SQLite runs with a write-ahead log that is synced at checkpoints (`synchronous = NORMAL`). A committed transaction survives a crash of the service. A power failure or a crash of the operating system can lose the most recent commits; the database stays consistent, and a message that is delivered again repeats the work.
+
 ### Atomicity
 
-There is no transaction that covers the Availability API, the applied version and the event together. They live in different systems, reached over HTTP, so no single transaction can span them. Instead, the service relies on three things:
+The applied version and its output event are stored in one database transaction. The Availability API is a different system, reached over HTTP, so no transaction can cover it together with the database. For that step, the service relies on two things:
 
 - the order of the steps;
-- idempotency (repeating a step has no extra effect);
-- the outbox.
+- idempotency (repeating a step has no extra effect).
 
-As a result, a failure at any point either leaves nothing changed, or the state converges once the message is delivered again.
+As a result, a failure at any point either leaves nothing changed, or the state converges once the message is delivered again or the relay runs.
 
 | Where processing stops | State left behind | How it converges |
 |---|---|---|
 | Before the `PUT`, or the `PUT` fails | Nothing changed; the version is not recorded | The caller gets `503` and retries; the change is applied later |
 | The `PUT` reached the gateway but the response was lost (timeout) | Stock may have changed; the version is not recorded | The retried message repeats the `PUT` with the same version, which is idempotent |
-| A crash after the `PUT`, before publishing | Stock changed; the event is not published | Today the event is lost, because the outbox is in memory. In production, the transactional outbox and broker redelivery close this gap (see below). |
-| Publishing fails after retries | Stock changed; version recorded; event in the outbox | The relay publishes it later with the same `eventId` |
+| A crash after the `PUT`, before the version is recorded | Stock changed; no version and no event stored | The message was not acknowledged, so it is delivered again. The `PUT` is repeated with the same version, and the version and the event are then stored. A CSV row needs its file uploaded again. |
+| A crash after the version is recorded, before publishing | Stock changed; version and event stored | The relay publishes the event after the restart |
+| Publishing fails after retries | Stock changed; version and event stored | The relay publishes the event later, with the same `eventId` |
 
 Inside the service:
 
 - **One stock key at a time.** The key lock makes "check version, write, record version" indivisible for a key. Two updates for the same key cannot interleave within one process.
-- **Recorded versions only move forward.** The store keeps the higher version even if two writers race.
-- **Publishing is not cancelled when the caller disconnects.** Once the stock is written, the event is either published or queued.
+- **Recorded versions only move forward.** The SQL statement that stores a version only replaces a lower one (`WHERE excluded.source_version > applied_stock.source_version`).
+- **Publishing is not cancelled when the caller disconnects.** Once the stock is written, the event stays in the outbox until it is published.
 - **An upload is accepted or rejected as a whole.** If the queue is full, the job is removed before `503` is returned, so no orphan job is left behind.
 - **Imports are atomic per row, not per file, by design.** The brief asks for partial-failure reporting, and one bad or stale row must not block the others. Running a file again is safe: rows that were already applied are skipped.
 - **The job status is always consistent.** Job counters are updated atomically (`Interlocked`), and the status and row results are updated under a lock, so `GET` never shows a half-written state.
 
 ### What production would add
 
-1. **Applied versions in a database,** written with a conditional update (`UPDATE … WHERE version < @new`). The versions survive restarts, and the check works across instances.
-2. **A transactional outbox.** The applied version and the outgoing event are written in one database transaction, and a relay publishes the outbox rows. A crash cannot lose the event; at worst the relay publishes it twice, with the same `eventId`.
+1. **A server database instead of the SQLite file.** SQLite is one file used by one instance. A database shared by all instances keeps the same conditional update and the same outbox table, and the version check then works across instances.
+2. **A relay for several instances.** Outbox rows are leased, or read through change data capture, so that two instances do not publish the same event. An event that the sink keeps rejecting moves to a dead-letter table after a number of attempts, instead of being retried for ever.
 3. **Commit after processing.** The Kafka consumer commits the offset only after the handler returns, so a message interrupted by a crash is delivered again. Combined with the idempotent `PUT` and the outbox, every change is eventually applied, and repeated work has no extra effect.
 4. **Durable, resumable imports.** The uploaded file goes to blob storage and the job to a table. On start-up, the worker resumes jobs that were `Queued` or `Running`; the version check skips rows that were already applied.
 5. **A version check in the Availability API.** If the API rejects writes older than the version it holds, lost state in this service can never cause an overwrite.
@@ -277,12 +285,12 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - `eventId` is deterministic.
   - `causationId` is the inbound `eventId`, or `import:{jobId}:line:{n}` for CSV rows.
   - `productContext` adds `category` and `color` to the fields shown in the brief.
-- Single instance with in-memory state (versions, jobs, outbox), so everything is lost on restart. See [Crashes, restarts and atomicity](#crashes-restarts-and-atomicity).
+- Single instance. The applied versions and the outbox are in a local SQLite file; the import jobs and the key locks are in memory. See [Crashes, restarts and atomicity](#crashes-restarts-and-atomicity).
 - Uploads are read into memory and limited by Kestrel's default request size of about 30 MB; a larger upload gets `413`. The fixture is 375 KB.
 
 ## Tests
 
-`dotnet test` runs 60 tests in a few seconds, without Docker.
+`dotnet test` runs 65 tests in a few seconds, without Docker.
 
 [docs/test-traceability.md](docs/test-traceability.md) maps each requirement of the brief to the tests that check it. It also lists what no test proves yet, and the tests that I checked by breaking the code.
 
@@ -293,10 +301,11 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - versions are independent for each part of the key: seller, product, size and country;
   - unknown, inactive and disabled products;
   - a transient write failure;
-  - a publish failure that goes to the outbox;
+  - a publish failure, after which the event waits in the outbox and the relay publishes it;
   - an event and a bulk row racing on the same key. This test fails if the per-key lock is removed.
+- **`SqliteStockStoreTests`:** the SQL of the store, against a SQLite database in memory. A version and its event are stored together, the event leaves the outbox once published, and a version that is not higher never replaces the stored one.
 - **`StockCsvTests`:** CRLF line endings, any column order, quoted fields, header errors, row errors (a row with broken quoting among them), and the provided fixture.
-- **`DevMessagesEndpointTests`, `BulkImportEndpointTests` and `EventPublisherTests`** run the real application (`WebApplicationFactory`) with the real resilience pipeline. Only the HTTP dependencies are replaced, by an in-memory copy of the WireMock mappings ([FakeDependencies.cs](tests/AvailabilityProcessor.Tests/Support/FakeDependencies.cs)), and they use the real fixtures. They cover:
+- **`DevMessagesEndpointTests`, `BulkImportEndpointTests` and `EventPublisherTests`** run the real application (`WebApplicationFactory`) with the real resilience pipeline. Only the HTTP dependencies are replaced, by an in-memory copy of the WireMock mappings ([FakeDependencies.cs](tests/AvailabilityProcessor.Tests/Support/FakeDependencies.cs)), and they use the real fixtures. Each application gets its own SQLite database, in memory. They cover:
   - the sample event;
   - every fault input from the mock reference table;
   - `Retry-After`;
@@ -307,15 +316,13 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - an event that arrives while an import job is writing the same key. The event waits, and the older row never overwrites it;
   - uploads that cannot be read: a request that is not multipart gets `415`, a form body that cannot be parsed gets `400`, and a body over the size limit gets `413`. Kestrel enforces that limit, so this one test starts the application on Kestrel, with the limit lowered to 1 KB;
   - the circuit breaker: it opens after repeated failures, the next call is rejected without reaching the dependency, and it closes again once the dependency recovers;
-  - an import of 200 rows against a failing Availability API, which stops calling it once the circuit opens.
+  - an import of 200 rows against a failing Availability API, which stops calling it once the circuit opens;
+  - a restart. Two instances of the application use the same database file, one after the other: the second one still skips an older event, and it publishes an event that the first one left in the outbox.
 - **Event sink faults:** they are keyed on the published `eventId` (`fault-429` and `fault-503`). The service derives event IDs from the key and version, so the full flow never produces them; the publisher adapter is tested with those IDs directly.
 
 ## What I would do next
 
-- Persist state in a database:
-  - the version per key, written with a conditional update (`WHERE version < @new`);
-  - a transactional outbox;
-  - import jobs and their row results.
+- Move the state from the SQLite file to a database shared by all instances, and store the import jobs and their row results there too.
 - Have the Availability API enforce `sourceVersion` (reject older writes) as the last line of defence.
 - Add Kafka consumer and producer adapters, with dead-letter and retry topics.
 - Add OpenTelemetry metrics and tracing (using `causationId`), and dependency health checks.

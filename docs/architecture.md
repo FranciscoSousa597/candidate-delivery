@@ -62,8 +62,8 @@ Both stock-change endpoints validate their input with the same rules and convert
   - **single events:** `DevEndpoints` calls `SellerInventoryChangedHandler`;
   - **files:** `ImportEndpoints` queues a job, and `ImportWorker` runs `ImportJobRunner` in the background.
 - Both paths end in `StockUpdateProcessor`, the only place where a stock change is applied.
-- The processor uses in-memory state: applied versions, key locks and the outbox. It reaches the outside world through three HTTP clients, each behind its own resilience pipeline.
-- All state is in memory and is lost on restart. In production it would live in a database (see SOLUTION.md).
+- The processor keeps the applied versions and the outbox in a SQLite database (`SqliteStockStore`), and the key locks in memory. It reaches the outside world through three HTTP clients, each behind its own resilience pipeline.
+- The database survives a restart. The key locks and the import jobs are in memory and do not. In production the database would be a server shared by all instances (see SOLUTION.md).
 
 ## 6. Processing pipeline
 
@@ -71,8 +71,8 @@ Both stock-change endpoints validate their input with the same rules and convert
 
 - Every stock update goes through the same steps. Only the source of product context differs: an HTTP lookup for single events, the loaded snapshot for imports.
 - The key lock covers steps 2 to 5. An older update can never be written after a newer one for the same stock key, even when an event and a CSV row for that key are processed at the same time.
-- The version is recorded right after the availability write and before publishing. A failed write leaves it unrecorded, so a redelivered message can still be applied.
-- If publishing keeps failing, the update stays applied and the event waits in the outbox. `OutboxRelayService` retries it every 10 seconds with the same deterministic `eventId`, so consumers can drop duplicates.
+- The version is recorded right after the availability write and before publishing. The output event goes into the outbox in the same database transaction. A failed write leaves both unrecorded, so a redelivered message can still be applied.
+- A published event leaves the outbox. If publishing keeps failing, the update stays applied and the event stays in the outbox. `OutboxRelayService` publishes the waiting events every 10 seconds with the same deterministic `eventId`, so consumers can drop duplicates.
 
 ## 7. Single event, step by step
 
@@ -123,9 +123,11 @@ Both stock-change endpoints validate their input with the same rules and convert
   - `ImportWorker` runs one job at a time. The job moves from `Queued` to `Running` and ends as `Completed`, `CompletedWithErrors` or `Failed`.
   - Jobs are kept in memory, so they are lost on restart.
 - **Outbox relay:**
-  - Every 10 seconds, `OutboxRelayService` tries to publish each pending event once.
-  - A published event leaves the outbox. A failed one stays and is retried on the next tick.
-  - Events are stored under their deterministic `eventId`, so the same event is never queued twice. `GET /_dev/outbox` shows what is pending.
+  - The outbox is a table in the SQLite database, so the waiting events survive a restart.
+  - Every 10 seconds, `OutboxRelayService` runs `OutboxRelay`, which tries to publish the oldest waiting events once.
+  - A published event leaves the outbox. A failed one stays and is retried on the next run. When the sink is failing, the run stops at the first failure.
+  - Before it publishes an event, the relay takes the lock of the event's stock key. The processor publishes under the same lock, so an event is never published by both at the same moment.
+  - Events are stored under their deterministic `eventId`, so the same event is never queued twice. `GET /_dev/outbox` shows what is waiting.
 
 ## 11. Proposed production messaging
 
@@ -137,7 +139,7 @@ Both stock-change endpoints validate their input with the same rules and convert
   - applied or skipped: it commits the offset;
   - invalid message or permanent failure: it sends the message to a dead-letter topic, then commits;
   - transient failure: it sends the message to a delayed retry topic, so the partition is not blocked.
-- The applied version and the outbound event are written in one database transaction, as an outbox row. A relay publishes the row with an idempotent Kafka producer, which replaces the in-memory outbox and the HTTP event sink.
+- As today, the applied version and the outbound event are written in one database transaction, as an outbox row. A relay publishes the row with an idempotent Kafka producer, which replaces the HTTP event sink.
 - The outbound topic is log-compacted, so new consumers can read the latest availability per key. Delivery is at least once: consumers drop duplicates by `eventId` and keep the highest `sourceVersion` per key.
 - Alternatives that also keep per-key order:
   - Azure Service Bus with sessions;

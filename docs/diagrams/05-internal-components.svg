@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="820" height="780" viewBox="0 0 820 780" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
   <title id="title">Inside the service</title>
-  <desc id="desc">The event endpoint calls the message handler. The import endpoints queue jobs for a background worker that runs the import job runner. Both paths call the stock update processor, which uses in-memory state and three HTTP clients. Each client sits behind a resilience pipeline and calls one dependency: the Product Context API, the Availability API or the event sink.</desc>
+  <desc id="desc">The event endpoint calls the message handler. The import endpoints queue jobs for a background worker that runs the import job runner. Both paths call the stock update processor, which uses a SQLite database for the applied versions and the outbox, in-memory key locks and three HTTP clients. Each client sits behind a resilience pipeline and calls one dependency: the Product Context API, the Availability API or the event sink.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
@@ -38,17 +38,17 @@
   </g>
 
   <rect x="560" y="250" width="240" height="262" rx="12" fill="none" stroke="#888780" stroke-dasharray="6 4"/>
-  <text x="575" y="270" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">In-memory state</text>
+  <text x="575" y="270" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">State</text>
   <g font-size="12" text-anchor="middle" dominant-baseline="central">
-    <rect x="575" y="284" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <rect x="575" y="284" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-width="1.5"/>
     <text x="680" y="300" font-size="13" font-weight="600" fill="#2C2C2A">Applied versions</text>
-    <text x="680" y="318" fill="#5F5E5A">IStockStateStore</text>
+    <text x="680" y="318" fill="#5F5E5A">IStockStateStore, in SQLite</text>
     <rect x="575" y="340" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
     <text x="680" y="356" font-size="13" font-weight="600" fill="#2C2C2A">Key locks</text>
     <text x="680" y="374" fill="#5F5E5A">StockKeyLock, one lock per key</text>
-    <rect x="575" y="396" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <rect x="575" y="396" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-width="1.5"/>
     <text x="680" y="412" font-size="13" font-weight="600" fill="#2C2C2A">Outbox and relay</text>
-    <text x="680" y="430" fill="#5F5E5A">PendingEventOutbox</text>
+    <text x="680" y="430" fill="#5F5E5A">IEventOutbox, in SQLite</text>
     <rect x="575" y="452" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
     <text x="680" y="468" font-size="13" font-weight="600" fill="#2C2C2A">Import jobs</text>
     <text x="680" y="486" fill="#5F5E5A">ImportJobStore</text>
@@ -101,7 +101,7 @@
     <rect x="30" y="746" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
     <text x="48" y="752" dominant-baseline="central">Service components</text>
     <rect x="210" y="746" width="12" height="12" rx="2" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
-    <text x="228" y="752" dominant-baseline="central">In-memory state (dashed arrow = uses)</text>
+    <text x="228" y="752" dominant-baseline="central">State: dashed = memory, solid = SQLite</text>
     <rect x="470" y="746" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
     <text x="488" y="752" dominant-baseline="central">External dependencies</text>
   </g>

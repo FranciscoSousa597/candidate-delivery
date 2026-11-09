@@ -2,7 +2,7 @@ namespace AvailabilityProcessor.Domain;
 
 public enum ProcessingStatus
 {
-    /// <summary>Availability written and output event published (or queued in the outbox for retry).</summary>
+    /// <summary>Availability written and output event published (or still in the outbox, for the relay to publish).</summary>
     Applied,
 
     /// <summary>Nothing to do: the version was already applied (duplicate) or a newer one was (stale).</summary>
@@ -43,7 +43,7 @@ public sealed record ProcessingResult(
         OutcomeCodes.Applied,
         eventPublished
             ? "Availability updated and SizeAvailabilityUpdated published."
-            : "Availability updated. Publishing the event failed, so it was queued in the outbox for retry.",
+            : "Availability updated. Publishing the event failed, so it stays in the outbox and the relay will publish it.",
         OutputEventId: outputEventId,
         EventPublished: eventPublished);
 

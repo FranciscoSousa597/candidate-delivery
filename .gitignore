@@ -4,3 +4,8 @@ obj/
 .idea/
 *.user
 TestResults/
+
+# Local SQLite state of the service
+*.db
+*.db-shm
+*.db-wal

@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AvailabilityProcessor.Contracts;
-using AvailabilityProcessor.Dependencies;
 using AvailabilityProcessor.Domain;
 using AvailabilityProcessor.Processing;
 using AvailabilityProcessor.Tests.Support;
@@ -190,13 +189,66 @@ public sealed class DevMessagesEndpointTests : IDisposable
         // The sink recovers and the relay publishes the parked event.
         _app.Dependencies.Override = null;
         using var scope = _app.Services.CreateScope();
-        var relayed = await _app.Services.GetRequiredService<PendingEventOutbox>()
-            .FlushAsync(scope.ServiceProvider.GetRequiredService<IEventPublisher>(), CancellationToken.None);
+        var relayed = await scope.ServiceProvider.GetRequiredService<OutboxRelay>().PublishPendingAsync(CancellationToken.None);
 
         Assert.Equal(1, relayed);
         var attempts = _app.Dependencies.Where("POST", "/mock-broker/v1/events");
         Assert.Equal(4, attempts.Count); // 3 failed attempts inline, 1 successful relay
         Assert.Single(attempts.Select(attempt => (string?)JsonNode.Parse(attempt.Body!)!["eventId"]).Distinct());
+        outbox = await _client.GetFromJsonAsync<JsonObject>("/_dev/outbox");
+        Assert.Equal(0, (int)outbox!["pending"]!);
+    }
+
+    [Fact]
+    public async Task Applied_version_survives_a_restart_so_an_older_event_is_still_skipped()
+    {
+        using var database = new TempDatabase();
+        using (var beforeRestart = new TestApp(database.Settings))
+        using (var client = beforeRestart.CreateClient())
+        {
+            var (applied, _) = await Send(SampleEvent(eventId: "msg-0008", version: 8, quantity: 3), client);
+            Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+        }
+
+        // A new instance of the service, with the same database file.
+        using var afterRestart = new TestApp(database.Settings);
+        using var restarted = afterRestart.CreateClient();
+        var (response, body) = await Send(SampleEvent(eventId: "msg-0007", version: 7, quantity: 10), restarted);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(OutcomeCodes.StaleVersion, (string?)body["code"]);
+        Assert.Empty(afterRestart.Dependencies.Requests); // no lookup, no write, no event
+    }
+
+    [Fact]
+    public async Task Event_waiting_in_the_outbox_survives_a_restart_and_is_published_afterwards()
+    {
+        using var database = new TempDatabase();
+        string? eventId;
+        using (var beforeRestart = new TestApp(database.Settings))
+        using (var client = beforeRestart.CreateClient())
+        {
+            beforeRestart.Dependencies.Override = request =>
+                request.Method == "POST" ? FakeDependencies.Json(HttpStatusCode.ServiceUnavailable, "{}") : null;
+            var (_, body) = await Send(SampleEvent(), client);
+            Assert.False((bool)body["eventPublished"]!);
+            eventId = (string?)body["outputEventId"];
+        }
+
+        // A new instance of the service, with the same database file and a sink that works again.
+        using var afterRestart = new TestApp(database.Settings);
+        using var restarted = afterRestart.CreateClient();
+        var outbox = await restarted.GetFromJsonAsync<JsonObject>("/_dev/outbox");
+        Assert.Equal(1, (int)outbox!["pending"]!);
+
+        using var scope = afterRestart.Services.CreateScope();
+        var relayed = await scope.ServiceProvider.GetRequiredService<OutboxRelay>().PublishPendingAsync(CancellationToken.None);
+
+        Assert.Equal(1, relayed);
+        var published = Assert.Single(afterRestart.Dependencies.Where("POST", "/mock-broker/v1/events"));
+        Assert.Equal(eventId, (string?)JsonNode.Parse(published.Body!)!["eventId"]);
+        outbox = await restarted.GetFromJsonAsync<JsonObject>("/_dev/outbox");
+        Assert.Equal(0, (int)outbox!["pending"]!);
     }
 
     [Fact]

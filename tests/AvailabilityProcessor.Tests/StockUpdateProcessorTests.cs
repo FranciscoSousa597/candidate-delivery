@@ -1,27 +1,30 @@
 using AvailabilityProcessor.Contracts;
 using AvailabilityProcessor.Dependencies;
 using AvailabilityProcessor.Domain;
+using AvailabilityProcessor.Persistence;
 using AvailabilityProcessor.Processing;
 using AvailabilityProcessor.Tests.Support;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AvailabilityProcessor.Tests;
 
-/// <summary>The shared business flow, with in-memory fakes for the three dependencies.</summary>
-public sealed class StockUpdateProcessorTests
+/// <summary>The shared business flow, with fakes for the three dependencies and a SQLite database kept in memory.</summary>
+public sealed class StockUpdateProcessorTests : IDisposable
 {
     private static readonly StockKey Key = Build.Update(version: 0).Key;
 
-    private readonly InMemoryStockStateStore _store = new();
+    private readonly SqliteStockStore _store = new("Data Source=:memory:");
+    private readonly StockKeyLock _keyLock = new();
     private readonly RecordingGateway _gateway = new();
     private readonly RecordingPublisher _publisher = new();
-    private readonly PendingEventOutbox _outbox = new(NullLogger<PendingEventOutbox>.Instance);
     private readonly StubContexts _contexts = new StubContexts().Add(Build.Context());
     private readonly StockUpdateProcessor _processor;
 
     public StockUpdateProcessorTests() =>
         _processor = new StockUpdateProcessor(
-            _store, new StockKeyLock(), _gateway, _publisher, _outbox, TimeProvider.System, NullLogger<StockUpdateProcessor>.Instance);
+            _store, _keyLock, _gateway, _publisher, _store, TimeProvider.System, NullLogger<StockUpdateProcessor>.Instance);
+
+    public void Dispose() => _store.Dispose();
 
     [Fact]
     public async Task New_version_is_written_recorded_and_published_with_canonical_context()
@@ -44,6 +47,7 @@ public sealed class StockUpdateProcessorTests
         Assert.Equal("EU 38", published.ProductContext.SizeLabel);
         Assert.Equal(result.OutputEventId, published.EventId);
         Assert.Equal(7, (await _store.GetAsync(Key, default))!.SourceVersion);
+        Assert.Equal(0, await _store.CountPendingAsync(default)); // a published event leaves the outbox
     }
 
     [Fact]
@@ -148,7 +152,7 @@ public sealed class StockUpdateProcessorTests
 
         Assert.Equal(ProcessingStatus.Applied, result.Status);
         Assert.False(result.EventPublished);
-        Assert.Equal(1, _outbox.PendingCount);
+        Assert.Equal(1, await _store.CountPendingAsync(default));
         Assert.Equal(7, (await _store.GetAsync(Key, default))!.SourceVersion);
 
         // A replay must not write the stock again: that version is already applied.
@@ -158,8 +162,9 @@ public sealed class StockUpdateProcessorTests
 
         // Once the sink recovers, the relay publishes the parked event, with the same deterministic eventId.
         _publisher.FailWith = null;
-        Assert.Equal(1, await _outbox.FlushAsync(_publisher, CancellationToken.None));
-        Assert.Equal(0, _outbox.PendingCount);
+        var relay = new OutboxRelay(_store, _publisher, _keyLock, NullLogger<OutboxRelay>.Instance);
+        Assert.Equal(1, await relay.PublishPendingAsync(CancellationToken.None));
+        Assert.Equal(0, await _store.CountPendingAsync(default));
         Assert.Equal(result.OutputEventId, Assert.Single(_publisher.Published).EventId);
     }
 

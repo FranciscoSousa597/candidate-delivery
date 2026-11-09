@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="820" height="650" viewBox="0 0 820 650" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
   <title id="title">Processing pipeline</title>
-  <desc id="desc">Six steps for every stock update: lock the stock key, compare versions, get the product context, write availability, record the applied version and publish the event. A same or older version is skipped. A product that cannot be sold fails permanently. A write that keeps failing fails temporarily and the version is not recorded. If publishing keeps failing, the update stays applied and the event waits in the outbox.</desc>
+  <desc id="desc">Six steps for every stock update: lock the stock key, compare versions, get the product context, write availability, record the applied version together with its event in one database transaction, and publish the event. A same or older version is skipped. A product that cannot be sold fails permanently. A write that keeps failing fails temporarily and the version is not recorded. If publishing keeps failing, the update stays applied and the event waits in the outbox.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
@@ -30,7 +30,7 @@
 
     <rect x="60" y="384" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
     <text x="210" y="404" font-size="14" font-weight="600" fill="#3C3489">5. Record applied version</text>
-    <text x="210" y="422" fill="#534AB7">version and quantity, in memory</text>
+    <text x="210" y="422" fill="#534AB7">with its event, in one transaction</text>
 
     <rect x="60" y="460" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
     <text x="210" y="480" font-size="14" font-weight="600" fill="#3C3489">6. Publish the event</text>

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using AvailabilityProcessor.Contracts;
 using AvailabilityProcessor.Domain;
 
 namespace AvailabilityProcessor.Processing;
@@ -14,24 +14,25 @@ public interface IStockStateStore
 {
     ValueTask<AppliedStock?> GetAsync(StockKey key, CancellationToken ct);
 
-    ValueTask MarkAppliedAsync(StockKey key, AppliedStock state, CancellationToken ct);
+    /// <summary>
+    /// Records the applied version and puts its output event in the outbox, in one transaction: either both are
+    /// stored or neither is. A version that is not higher than the stored one never replaces it.
+    /// </summary>
+    ValueTask RecordAppliedAsync(StockKey key, AppliedStock state, SizeAvailabilityUpdated outputEvent, CancellationToken ct);
 }
 
 /// <summary>
-/// In-memory implementation for the exercise. In production this would be a shared store (e.g. a database row per key
-/// updated with "WHERE version &lt; @new") so that several service instances agree on the applied version.
+/// Output events that are waiting to be published. An event enters the outbox together with its applied version
+/// (see <see cref="IStockStateStore.RecordAppliedAsync"/>) and leaves it once the sink has accepted it.
 /// </summary>
-public sealed class InMemoryStockStateStore : IStockStateStore
+public interface IEventOutbox
 {
-    private readonly ConcurrentDictionary<StockKey, AppliedStock> _state = new();
+    /// <summary>The waiting events, oldest first.</summary>
+    ValueTask<IReadOnlyList<SizeAvailabilityUpdated>> GetPendingAsync(int limit, CancellationToken ct);
 
-    public ValueTask<AppliedStock?> GetAsync(StockKey key, CancellationToken ct) =>
-        ValueTask.FromResult<AppliedStock?>(_state.TryGetValue(key, out var state) ? state : null);
+    ValueTask<bool> IsPendingAsync(string eventId, CancellationToken ct);
 
-    public ValueTask MarkAppliedAsync(StockKey key, AppliedStock state, CancellationToken ct)
-    {
-        // Monotonic even without the caller's lock: a lower version can never replace a higher one.
-        _state.AddOrUpdate(key, state, (_, current) => state.SourceVersion > current.SourceVersion ? state : current);
-        return ValueTask.CompletedTask;
-    }
+    ValueTask MarkPublishedAsync(string eventId, CancellationToken ct);
+
+    ValueTask<int> CountPendingAsync(CancellationToken ct);
 }

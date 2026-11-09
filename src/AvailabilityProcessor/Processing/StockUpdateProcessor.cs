@@ -13,7 +13,7 @@ public sealed class StockUpdateProcessor(
     StockKeyLock keyLock,
     IAvailabilityGateway availabilityGateway,
     IEventPublisher eventPublisher,
-    PendingEventOutbox outbox,
+    IEventOutbox outbox,
     TimeProvider timeProvider,
     ILogger<StockUpdateProcessor> logger)
 {
@@ -64,11 +64,13 @@ public sealed class StockUpdateProcessor(
 
         // 4. The stock really changed downstream, so the version is recorded even if publishing fails below.
         //    Otherwise an older update could pass the version check later and overwrite this one.
+        //    The output event goes into the outbox in the same transaction, so a crash here cannot lose it.
         var appliedAt = timeProvider.GetUtcNow();
-        await stateStore.MarkAppliedAsync(update.Key, new AppliedStock(update.SourceVersion, update.AvailableQuantity, appliedAt), CancellationToken.None);
-
-        // 5. Publish. If it fails, the event goes to the outbox and the relay keeps retrying it.
         var outputEvent = SizeAvailabilityUpdated.Create(update, context, appliedAt);
+        await stateStore.RecordAppliedAsync(
+            update.Key, new AppliedStock(update.SourceVersion, update.AvailableQuantity, appliedAt), outputEvent, CancellationToken.None);
+
+        // 5. Publish straight away. If it fails, the event stays in the outbox and the relay publishes it later.
         var published = await TryPublishAsync(outputEvent);
 
         logger.LogDebug("Applied {StockKey} v{Version} (qty {Quantity}); event {EventId} published: {Published}.",
@@ -118,12 +120,12 @@ public sealed class StockUpdateProcessor(
             // Deliberately not tied to the caller's token: the stock already changed, so the event must go out
             // even if the request that triggered it was cancelled.
             await eventPublisher.PublishAsync(outputEvent, CancellationToken.None);
+            await outbox.MarkPublishedAsync(outputEvent.EventId, CancellationToken.None);
             return true;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Publishing {EventId} failed; queued in the outbox for retry.", outputEvent.EventId);
-            outbox.Add(outputEvent);
+            logger.LogWarning(ex, "Publishing {EventId} failed; it stays in the outbox for the relay.", outputEvent.EventId);
             return false;
         }
     }

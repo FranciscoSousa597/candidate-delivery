@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="820" height="590" viewBox="0 0 820 590" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
   <title id="title">Background work</title>
-  <desc id="desc">An accepted upload goes into an in-memory queue of at most 10 jobs. ImportWorker takes one job at a time and runs ImportJobRunner. An import job moves from Queued to Running and ends as Completed, CompletedWithErrors or Failed. Separately, when publishing fails after retries, the processor puts the event in PendingEventOutbox. OutboxRelayService reads it every 10 seconds and publishes it to the event sink. If publishing fails again, the event stays pending.</desc>
+  <desc id="desc">An accepted upload goes into an in-memory queue of at most 10 jobs. ImportWorker takes one job at a time and runs ImportJobRunner. An import job moves from Queued to Running and ends as Completed, CompletedWithErrors or Failed. Separately, the processor stores each event in the outbox table of the SQLite database, together with the applied version, and an event whose publication failed stays there. OutboxRelayService reads the table every 10 seconds and publishes the waiting events to the event sink. If publishing fails again, the event stays in the outbox.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
@@ -51,12 +51,12 @@
     <rect x="20" y="386" width="230" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
     <text x="135" y="406" font-size="14" font-weight="600" fill="#3C3489">Stock update processor</text>
     <text x="135" y="424" fill="#534AB7">publish failed after retries</text>
-    <rect x="290" y="386" width="220" height="56" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
-    <text x="400" y="406" font-size="14" font-weight="600" fill="#2C2C2A">PendingEventOutbox</text>
-    <text x="400" y="424" fill="#5F5E5A">waiting events, by eventId</text>
+    <rect x="290" y="386" width="220" height="56" rx="8" fill="#FFFFFF" stroke="#888780" stroke-width="1.5"/>
+    <text x="400" y="406" font-size="14" font-weight="600" fill="#2C2C2A">Outbox table</text>
+    <text x="400" y="424" fill="#5F5E5A">waiting events, in SQLite</text>
     <rect x="550" y="386" width="250" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
     <text x="675" y="406" font-size="14" font-weight="600" fill="#3C3489">OutboxRelayService</text>
-    <text x="675" y="424" fill="#534AB7">every 10 s, retries each event</text>
+    <text x="675" y="424" fill="#534AB7">every 10 s, publishes waiting events</text>
     <rect x="550" y="496" width="250" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
     <text x="675" y="516" font-size="14" font-weight="600" fill="#085041">Event sink</text>
     <text x="675" y="534" fill="#0F6E56">a Kafka producer in production</text>
@@ -87,5 +87,7 @@
     <text x="268" y="570" dominant-baseline="central">In-memory structure</text>
     <rect x="410" y="564" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
     <text x="428" y="570" dominant-baseline="central">Dependency</text>
+    <rect x="520" y="564" width="12" height="12" rx="2" fill="#FFFFFF" stroke="#888780" stroke-width="1.5"/>
+    <text x="538" y="570" dominant-baseline="central">Database table</text>
   </g>
 </svg>
