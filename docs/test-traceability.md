@@ -7,7 +7,7 @@ This document maps each requirement of the brief to the tests that check it. It 
 
 I wrote the tests after the code, from my own reading of the brief. If that reading is wrong somewhere, the code and its test are wrong together and the test still passes. The tables below make the reading checkable against the brief, one requirement at a time.
 
-The suite has 38 test methods and 59 test cases. `dotnet test` runs them without Docker.
+The suite has 38 test methods and 60 test cases. `dotnet test` runs them without Docker.
 
 ## Summary
 
@@ -103,7 +103,7 @@ The brief leaves these points open, or asks the candidate to decide and document
 | D7 | The output `eventId` is deterministic per stock key and version. `causationId` carries the inbound `eventId`. | Nothing. | Dev-1, Dev-9, Proc-9 |
 | D8 | Retry policy: only transient failures are retried, `Retry-After` is honoured, and the number of attempts is bounded. | Retry behaviour must be described. | Dev-7, Dev-8, Pub-1 |
 | D9 | Uploads are accepted as `multipart/form-data`, with the CSV in a field named `file`. A missing file, a form body that cannot be parsed or a bad header gets `400`. A body over the request size limit gets `413`. A request that is not multipart gets `415`. | Malformed requests are rejected synchronously. The format and the status codes are not given. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11 |
-| D10 | CSV parsing: columns are matched by header name in any order, CRLF and blank lines are accepted, quoted fields follow RFC 4180, and a repeated column name rejects the file. | The column names only. | Csv-1, Csv-3, Csv-5 |
+| D10 | CSV parsing: columns are matched by header name in any order, CRLF and blank lines are accepted, quoted fields follow RFC 4180, and a repeated column name rejects the file. The CsvHelper library does the parsing. A row with broken quoting fails on its own. | The column names only. | Csv-1, Csv-3, Csv-4, Csv-5 |
 | D11 | An invalid row fails on its own and keeps its line number. It does not reject the file. | The status must include row-level errors. | Csv-4, Bulk-2 |
 | D12 | An unknown job id gets `404`. | Nothing. | Bulk-5 |
 | D13 | Two helper routes exist for inspection: `GET /_dev/stock/...` and `GET /_dev/outbox`. | Nothing. | Used by Dev-3, Dev-7, Dev-9, Bulk-2 and Bulk-8 |
@@ -257,14 +257,14 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Bulk-11 | `Upload_larger_than_the_request_size_limit_is_rejected_with_413` | 1 | R4.3 | D9 |
 | Bulk-12 | `Import_against_a_failing_dependency_stops_calling_it_and_reports_the_rows_as_retryable` | 1 | R5.15 | D14 |
 
-### `StockCsvTests` (Csv): 5 methods, 11 cases
+### `StockCsvTests` (Csv): 5 methods, 12 cases
 
 | ID | Test | Cases | Requirements | Decisions |
 |---|---|---|---|---|
 | Csv-1 | `Parses_crlf_files_and_maps_columns_by_header_name` | 1 | R4.2 | D2, D10 |
 | Csv-2 | `Provided_fixture_parses_into_10000_valid_rows` | 1 | R4.2 | None |
 | Csv-3 | `Unusable_header_rejects_the_whole_upload` | 3 | R4.3 | D10 |
-| Csv-4 | `Invalid_row_becomes_a_row_level_error` | 5 | R3.3 | D2, D11 |
+| Csv-4 | `Invalid_row_becomes_a_row_level_error` | 6 | R3.3 | D2, D10, D11 |
 | Csv-5 | `Quoted_fields_may_contain_commas_quotes_and_line_breaks` | 1 | None | D10 |
 
 ### `EventPublisherTests` (Pub): 2 methods, 3 cases

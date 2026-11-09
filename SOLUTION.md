@@ -80,7 +80,7 @@ POST /v1/availability/imports ─► 202 + jobId          StockUpdateProcessor (
 | `Domain` | `StockKey`, `StockUpdate`, validation rules shared by both inputs, `ProcessingResult` |
 | `Processing` | `StockUpdateProcessor` (the shared flow), applied-version store, per-key lock, outbox and relay |
 | `Messaging` | `SellerInventoryChangedHandler`, the entry point for inbound messages |
-| `Imports` | CSV reader, import job state, queue, worker and runner |
+| `Imports` | The CSV format (parsed with the CsvHelper library), import job state, queue, worker and runner |
 | `Dependencies` | HTTP clients for the three dependencies and their resilience pipeline |
 | `Api` | Minimal API endpoints |
 
@@ -147,6 +147,7 @@ In production this becomes a transactional outbox. The version update and the ou
   - an empty file (`400`);
   - a header without the six required columns (`400`). Columns can be in any order, names are case-insensitive and extra columns are ignored.
   - a header with a duplicated column (`400`).
+- **Parsing:** the CsvHelper library reads the file as RFC 4180 (quoted fields, escaped quotes, CRLF or LF, empty lines skipped). The header rules above and the row rules are this service's own.
 - **Otherwise accepted with `202` straight away.** Rows are processed asynchronously:
   1. Each row is validated with the same rules as events.
   2. Its context comes from the snapshot.
@@ -281,7 +282,7 @@ As both collections grow, time grows linearly in each, and memory follows the up
 
 ## Tests
 
-`dotnet test` runs 59 tests in a few seconds, without Docker.
+`dotnet test` runs 60 tests in a few seconds, without Docker.
 
 [docs/test-traceability.md](docs/test-traceability.md) maps each requirement of the brief to the tests that check it. It also lists what no test proves yet, and the tests that I checked by breaking the code.
 
@@ -294,7 +295,7 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - a transient write failure;
   - a publish failure that goes to the outbox;
   - an event and a bulk row racing on the same key. This test fails if the per-key lock is removed.
-- **`StockCsvTests`:** CRLF line endings, any column order, quoted fields, header errors, row errors, and the provided fixture.
+- **`StockCsvTests`:** CRLF line endings, any column order, quoted fields, header errors, row errors (a row with broken quoting among them), and the provided fixture.
 - **`DevMessagesEndpointTests`, `BulkImportEndpointTests` and `EventPublisherTests`** run the real application (`WebApplicationFactory`) with the real resilience pipeline. Only the HTTP dependencies are replaced, by an in-memory copy of the WireMock mappings ([FakeDependencies.cs](tests/AvailabilityProcessor.Tests/Support/FakeDependencies.cs)), and they use the real fixtures. They cover:
   - the sample event;
   - every fault input from the mock reference table;

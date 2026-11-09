@@ -39,7 +39,7 @@ public static class ImportEndpoints
         {
             csv = StockCsv.Parse(new StringReader(upload.Text!));
         }
-        catch (CsvFormatException ex)
+        catch (InvalidCsvException ex)
         {
             return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "Invalid CSV.", detail: ex.Message);
         }

@@ -1,9 +1,13 @@
 using AvailabilityProcessor.Domain;
+using CsvHelper;
 
 namespace AvailabilityProcessor.Imports;
 
 /// <summary>A problem that makes the whole upload unusable (rejected synchronously with 400).</summary>
-public sealed class CsvFormatException(string message) : Exception(message);
+public sealed class InvalidCsvException(string message) : Exception(message);
+
+/// <summary>One data record. <see cref="LineNumber"/> is the line of the file where it starts (the header is line 1).</summary>
+public sealed record CsvRecord(int LineNumber, string[] Fields, bool HasBrokenQuoting = false);
 
 /// <summary>Column positions resolved from the header row. Names match case-insensitively and column order is free.</summary>
 public sealed class CsvColumns(IReadOnlyDictionary<string, int> positions, int width)
@@ -18,55 +22,68 @@ public sealed record ParsedCsv(CsvColumns Columns, IReadOnlyList<CsvRecord> Rows
 
 public sealed record RowMapping(StockUpdate? Update, IReadOnlyList<string> Errors);
 
-/// <summary>The stock import CSV format: header validation and row mapping.</summary>
+/// <summary>
+/// The stock import CSV format: header validation and row mapping. CsvHelper does the RFC 4180 parsing
+/// (quoted fields, escaped quotes, CRLF or LF line endings, empty lines skipped).
+/// </summary>
 public static class StockCsv
 {
     public static readonly IReadOnlyList<string> RequiredColumns =
         ["sellerId", "productId", "sizeId", "countryCode", "availableQuantity", "sourceVersion"];
 
     /// <summary>Reads the header and all data records. Only header problems throw; bad rows are reported per row later.</summary>
-    /// <exception cref="CsvFormatException">The file is empty or the header is missing required columns.</exception>
+    /// <exception cref="InvalidCsvException">The file is empty, or the header is missing or repeats a required column.</exception>
     public static ParsedCsv Parse(TextReader reader)
     {
-        using var records = CsvReader.Read(reader).GetEnumerator();
-        if (!records.MoveNext())
+        // A record with broken quoting is still returned by the reader. Its line is remembered here,
+        // so that the row fails on its own instead of being read as something it is not.
+        var linesWithBrokenQuoting = new HashSet<long>();
+        var options = CsvReaderOptions.Default with
         {
-            throw new CsvFormatException($"The file is empty. Expected the header: {string.Join(',', RequiredColumns)}");
+            Separator = ',',
+            TrackLineNumbers = true,
+            OnMalformedRecord = malformed => linesWithBrokenQuoting.Add(malformed.LineNumber),
+        };
+
+        using var csv = CsvReader.Create(reader, options, leaveOpen: true);
+        var header = csv.Headers;
+        if (header.Count == 0)
+        {
+            throw new InvalidCsvException($"The file is empty. Expected the header: {string.Join(',', RequiredColumns)}");
         }
 
-        var header = records.Current;
         var positions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < header.Fields.Length; i++)
+        for (var i = 0; i < header.Count; i++)
         {
-            var name = header.Fields[i].TrimStart('﻿').Trim();
+            var name = header[i].TrimStart('﻿').Trim();
             if (name.Length > 0 && !positions.TryAdd(name, i))
             {
-                throw new CsvFormatException($"Column '{name}' appears more than once in the header.");
+                throw new InvalidCsvException($"Column '{name}' appears more than once in the header.");
             }
         }
 
         var missing = RequiredColumns.Where(column => !positions.ContainsKey(column)).ToList();
         if (missing.Count > 0)
         {
-            throw new CsvFormatException(
+            throw new InvalidCsvException(
                 $"Missing required column(s): {string.Join(", ", missing)}. Expected the header: {string.Join(',', RequiredColumns)}");
         }
 
         var rows = new List<CsvRecord>();
-        while (records.MoveNext())
+        while (csv.Read())
         {
-            rows.Add(records.Current);
+            rows.Add(new CsvRecord((int)csv.LineNumber, csv.Current.ToArray(), linesWithBrokenQuoting.Contains(csv.LineNumber)));
         }
 
-        return new ParsedCsv(new CsvColumns(positions, header.Fields.Length), rows);
+        return new ParsedCsv(new CsvColumns(positions, header.Count), rows);
     }
 
     /// <summary>Turns one data row into a <see cref="StockUpdate"/> with the same rules as inventory events.</summary>
     public static RowMapping MapRow(CsvRecord record, CsvColumns columns, string causationId)
     {
-        if (record.IsMalformed)
+        if (record.HasBrokenQuoting)
         {
-            return new RowMapping(null, ["Malformed CSV record: unterminated quoted field."]);
+            return new RowMapping(null, ["Malformed CSV record: a quote is not closed or is in the wrong place."]);
         }
 
         if (record.Fields.Length != columns.Width)
