@@ -45,7 +45,7 @@
     <text x="680" y="318" fill="#5F5E5A">IStockStateStore</text>
     <rect x="575" y="340" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
     <text x="680" y="356" font-size="13" font-weight="600" fill="#2C2C2A">Key locks</text>
-    <text x="680" y="374" fill="#5F5E5A">StockKeyLock, 1024 stripes</text>
+    <text x="680" y="374" fill="#5F5E5A">StockKeyLock, one lock per key</text>
     <rect x="575" y="396" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
     <text x="680" y="412" font-size="13" font-weight="600" fill="#2C2C2A">Outbox and relay</text>
     <text x="680" y="430" fill="#5F5E5A">PendingEventOutbox</text>

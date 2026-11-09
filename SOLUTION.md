@@ -91,7 +91,7 @@ POST /v1/availability/imports ─► 202 + jobId          StockUpdateProcessor (
 - The stock key is `(sellerId, productId, sizeId, countryCode)`. A store keeps the latest **successfully applied** `sourceVersion` (and quantity) per key. Events and CSV rows share it.
 - Lower version than the applied one: skipped as `StaleVersion`. Same version: skipped as `DuplicateVersion`, which covers redeliveries and replays even when they carry a new `eventId`. Higher version: applied.
 - `eventId` is not used for de-duplication, because a replay may change it. It is kept as `causationId` on the output event for tracing.
-- The version check, the availability write and the version update run under a **per-key lock** (striped semaphores). An event and a bulk row for the same key cannot interleave, even while a job is running. Without the lock, v7 could reach the gateway after v8; a test reproduces that race.
+- The version check, the availability write and the version update run under a **per-key lock** (one semaphore per stock key, kept in memory for the life of the process). An event and a bulk row for the same key cannot interleave, even while a job is running. Without the lock, v7 could reach the gateway after v8; a test reproduces that race.
 - Only a successful write advances the version. A failed update leaves it unchanged, so a redelivery can still apply it.
 - The same version with a different quantity is treated as a duplicate (the applied value wins) and logged as a warning.
 

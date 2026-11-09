@@ -24,7 +24,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 // Shared state: applied versions, per-key locks, outbox and import jobs (in memory for the exercise).
 builder.Services.AddSingleton<IStockStateStore, InMemoryStockStateStore>();
-builder.Services.AddSingleton(new StockKeyLock());
+builder.Services.AddSingleton<StockKeyLock>();
 builder.Services.AddSingleton<PendingEventOutbox>();
 builder.Services.AddSingleton<ImportJobStore>();
 builder.Services.AddSingleton<ImportQueue>();
