@@ -20,6 +20,19 @@ public sealed class TestApp : WebApplicationFactory<Program>
         ["Outbox:RelayInterval"] = "01:00:00",
     };
 
+    public TestApp()
+    {
+    }
+
+    /// <summary>Starts the application with extra or different settings, for the tests that need them.</summary>
+    public TestApp(IReadOnlyDictionary<string, string?> settings)
+    {
+        foreach (var (key, value) in settings)
+        {
+            _settings[key] = value;
+        }
+    }
+
     public FakeDependencies Dependencies { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

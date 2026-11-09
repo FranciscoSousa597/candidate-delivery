@@ -199,6 +199,51 @@ public sealed class DevMessagesEndpointTests : IDisposable
         Assert.Single(attempts.Select(attempt => (string?)JsonNode.Parse(attempt.Body!)!["eventId"]).Distinct());
     }
 
+    [Fact]
+    public async Task Circuit_opens_after_repeated_failures_and_closes_again_when_the_dependency_recovers()
+    {
+        // A low threshold, so that six failed calls open the circuit: two events with three attempts each.
+        using var app = new TestApp(new Dictionary<string, string?>
+        {
+            ["Resilience:CircuitBreaker:MinimumThroughput"] = "6",
+            ["Resilience:CircuitBreaker:BreakDuration"] = "00:00:00.500",
+        });
+        using var client = app.CreateClient();
+        app.Dependencies.Override = request =>
+            request.Method == "PUT" ? FakeDependencies.Json(HttpStatusCode.ServiceUnavailable, "{}") : null;
+
+        foreach (var seller in new[] { "seller-a", "seller-b" })
+        {
+            var (failed, _) = await Send(EventFor(seller), client);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, failed.StatusCode);
+        }
+
+        Assert.Equal(6, app.Dependencies.Where("PUT", "/v1/availability/").Count);
+
+        // The circuit is open: the next event fails at once, and its write is not sent.
+        var (rejected, body) = await Send(EventFor("seller-c"), client);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, rejected.StatusCode);
+        Assert.True((bool)body["retryable"]!);
+        Assert.Contains("Circuit open", (string?)body["message"]);
+        Assert.Equal(6, app.Dependencies.Where("PUT", "/v1/availability/").Count);
+
+        // The dependency recovers. After the break, one trial call goes through and closes the circuit.
+        app.Dependencies.Override = null;
+        await Task.Delay(TimeSpan.FromMilliseconds(700));
+        var (recovered, _) = await Send(EventFor("seller-c"), client);
+
+        Assert.Equal(HttpStatusCode.OK, recovered.StatusCode);
+        Assert.Equal(7, app.Dependencies.Where("PUT", "/v1/availability/").Count);
+
+        static JsonObject EventFor(string sellerId)
+        {
+            var message = SampleEvent();
+            message["sellerId"] = sellerId;
+            return message;
+        }
+    }
+
     private static JsonObject SampleEvent(string? eventId = null, long? version = null, int? quantity = null)
     {
         var message = JsonNode.Parse(File.ReadAllText(TestData.SampleEvent))!.AsObject();
@@ -220,9 +265,9 @@ public sealed class DevMessagesEndpointTests : IDisposable
         return message;
     }
 
-    private async Task<(HttpResponseMessage Response, JsonObject Body)> Send(JsonObject message)
+    private async Task<(HttpResponseMessage Response, JsonObject Body)> Send(JsonObject message, HttpClient? client = null)
     {
-        var response = await _client.PostAsync("/_dev/messages", new StringContent(message.ToJsonString(), Encoding.UTF8, "application/json"));
+        var response = await (client ?? _client).PostAsync("/_dev/messages", new StringContent(message.ToJsonString(), Encoding.UTF8, "application/json"));
         var body = await response.Content.ReadFromJsonAsync<JsonObject>();
         return (response, body!);
     }

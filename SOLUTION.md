@@ -114,16 +114,20 @@ Each dependency has its own pipeline (`Microsoft.Extensions.Http.Resilience`, wh
 | Concurrency limiter | 16 calls in flight per dependency, 1,000 queued |
 | Total timeout | 60 s per logical call, retries included |
 | Retry | 3 retries for 408, 429, 5xx, network errors and timeouts. Exponential backoff from 200 ms with jitter, capped at 5 s. **`Retry-After` is honoured.** |
+| Circuit breaker | Opens when at least half of 20 or more calls in 30 s failed. Calls are then rejected for 5 s without being sent, and one trial call decides whether the circuit closes again. |
 | Attempt timeout | 10 s |
 
-`404` and other 4xx answers are final. When retries are exhausted, an event gets `503` (redeliver later) and a CSV row is reported as failed with `retryable: true`.
+`404` and other 4xx answers are final. When retries are exhausted, or the circuit is open, an event gets `503` (redeliver later) and a CSV row is reported as failed with `retryable: true`.
 
 Retrying is safe on both write paths:
 
 - `PUT` is idempotent and carries `sourceVersion`.
 - The `POST` to the sink is also retried, because the output `eventId` is deterministic (a hash of the stock key and version). Consumers can drop duplicates by `eventId`.
 
-Trade-off: honouring the mock's `Retry-After: 5` with 3 retries holds one message for about 15 s. With a real broker, a long `Retry-After` should send the message to a delayed retry topic instead of blocking the partition.
+Trade-offs:
+
+- Honouring the mock's `Retry-After: 5` with 3 retries holds one message for about 15 s. With a real broker, a long `Retry-After` should send the message to a delayed retry topic instead of blocking the partition.
+- The circuit breaker works per dependency, not per stock key. The fault inputs of the mocks count as failures of the whole dependency: about five failing events in a row open its circuit, and a healthy request sent in the next 5 s also gets `503`.
 
 ### Gateway write succeeded, but publishing failed
 
@@ -179,8 +183,9 @@ Abridged status of a mixed file (from the tests):
 
 - **Imports:** one job runs at a time. Inside a job, up to 8 stock keys are processed in parallel (`BulkImport:MaxDegreeOfParallelism`). Rows of the same key are processed in file order.
 - **Per-dependency limiter:** shared by events, imports and the outbox relay, so a burst never puts more than 16 concurrent calls on any dependency; extra calls wait in a bounded queue. A call keeps its permit while it waits for `Retry-After`, so 429s slow the callers down instead of piling up more requests.
+- **Circuit breaker:** when a dependency keeps failing, the service stops calling it for 5 s at a time instead of retrying every update against it. A large import against a dependency that is down therefore ends quickly, with its rows reported as retryable. A test imports 200 rows while the Availability API answers `503`: the API receives fewer than 100 calls instead of 600.
 - **Bounded import queue:** at most 10 jobs wait. When it is full, uploads get `503` instead of unbounded work being accepted.
-- **In production:** consumer concurrency is bounded by partitions × instances, partitions are paused during 429 storms, and a circuit breaker and a rate limiter are tuned to each dependency's quota.
+- **In production:** consumer concurrency is bounded by partitions × instances, partitions are paused during 429 storms, and a rate limiter is tuned to each dependency's quota. A durable import job would pause while a circuit is open and resume afterwards, instead of failing its rows.
 
 ## Crashes, restarts and atomicity
 
@@ -276,7 +281,7 @@ As both collections grow, time grows linearly in each, and memory follows the up
 
 ## Tests
 
-`dotnet test` runs 56 tests in a few seconds, without Docker.
+`dotnet test` runs 58 tests in a few seconds, without Docker.
 
 [docs/test-traceability.md](docs/test-traceability.md) maps each requirement of the brief to the tests that check it. It also lists what no test proves yet, and the tests that I checked by breaking the code.
 
@@ -299,7 +304,9 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - an upload that gets `202` while every dependency call is held, so before any row is processed;
   - a file with two countries, which needs one snapshot request per country;
   - an event that arrives while an import job is writing the same key. The event waits, and the older row never overwrites it;
-  - uploads that cannot be read: a form body that cannot be parsed gets `400`, and a body over the size limit gets `413`. Kestrel enforces that limit, so this one test starts the application on Kestrel, with the limit lowered to 1 KB.
+  - uploads that cannot be read: a form body that cannot be parsed gets `400`, and a body over the size limit gets `413`. Kestrel enforces that limit, so this one test starts the application on Kestrel, with the limit lowered to 1 KB;
+  - the circuit breaker: it opens after repeated failures, the next call is rejected without reaching the dependency, and it closes again once the dependency recovers;
+  - an import of 200 rows against a failing Availability API, which stops calling it once the circuit opens.
 - **Event sink faults:** they are keyed on the published `eventId` (`fault-429` and `fault-503`). The service derives event IDs from the key and version, so the full flow never produces them; the publisher adapter is tested with those IDs directly.
 
 ## What I would do next
@@ -310,5 +317,5 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - import jobs and their row results.
 - Have the Availability API enforce `sourceVersion` (reject older writes) as the last line of defence.
 - Add Kafka consumer and producer adapters, with dead-letter and retry topics.
-- Add a circuit breaker, OpenTelemetry metrics and tracing (using `causationId`), and dependency health checks.
+- Add OpenTelemetry metrics and tracing (using `causationId`), and dependency health checks.
 - For uploads: stream them to blob storage, paginate row results, add job retention and authentication, and switch off the `/_dev` routes.

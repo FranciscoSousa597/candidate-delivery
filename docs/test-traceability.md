@@ -7,7 +7,7 @@ This document maps each requirement of the brief to the tests that check it. It 
 
 I wrote the tests after the code, from my own reading of the brief. If that reading is wrong somewhere, the code and its test are wrong together and the test still passes. The tables below make the reading checkable against the brief, one requirement at a time.
 
-The suite has 36 test methods and 56 test cases. `dotnet test` runs them without Docker.
+The suite has 38 test methods and 58 test cases. `dotnet test` runs them without Docker.
 
 ## Summary
 
@@ -18,7 +18,7 @@ The suite has 36 test methods and 56 test cases. `dotnet test` runs them without
 | Partly covered | 1 |
 | Not covered | 0 |
 | Documented, not a matter for a test | 2 |
-| Decisions pinned by tests | 13 |
+| Decisions pinned by tests | 14 |
 | Gaps closed by a test | 6 |
 | Open gaps | 5 |
 
@@ -86,7 +86,7 @@ The suite has 36 test methods and 56 test cases. `dotnet test` runs them without
 | R5.12 | The event sink can fail transiently. | Pub-1, Dev-9, Proc-7 | Covered. |
 | R5.13 | Retry and idempotency behaviour is described. | Dev-7, Dev-8, Proc-2, Proc-6, Proc-9 | Covered, and described in SOLUTION.md. |
 | R5.14 | The case where the write succeeds and publishing fails is described. | Dev-9, Proc-7 | Covered, and described in SOLUTION.md. |
-| R5.15 | Concurrency and flow control are described. The brief states that no load test is required. | Proc-8, Bulk-8 | Partly (G8). The per-key lock is tested. The import queue limit, the row parallelism and the per-dependency limiter are only described. |
+| R5.15 | Concurrency and flow control are described. The brief states that no load test is required. | Proc-8, Bulk-8, Dev-10, Bulk-12 | Partly (G8). The per-key lock and the circuit breaker are tested. The import queue limit, the row parallelism and the per-dependency limiter are only described. |
 
 ## 2. Decisions the brief leaves open
 
@@ -107,6 +107,7 @@ The brief leaves these points open, or asks the candidate to decide and document
 | D11 | An invalid row fails on its own and keeps its line number. It does not reject the file. | The status must include row-level errors. | Csv-4, Bulk-2 |
 | D12 | An unknown job id gets `404`. | Nothing. | Bulk-5 |
 | D13 | Two helper routes exist for inspection: `GET /_dev/stock/...` and `GET /_dev/outbox`. | Nothing. | Used by Dev-3, Dev-7, Dev-9, Bulk-2 and Bulk-8 |
+| D14 | Each dependency has a circuit breaker. When at least half of 20 or more calls in 30 seconds fail, calls are rejected for 5 seconds without being sent, and then one trial call decides whether the circuit closes. | The solution must avoid overwhelming dependencies during a burst or a large upload. How is not given. | Dev-10, Bulk-12 |
 
 ## 3. Gaps
 
@@ -210,7 +211,7 @@ Notes on these runs:
 
 All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of test cases the method runs.
 
-### `DevMessagesEndpointTests` (Dev): 9 methods, 14 cases
+### `DevMessagesEndpointTests` (Dev): 10 methods, 15 cases
 
 | ID | Test | Cases | Requirements | Decisions |
 |---|---|---|---|---|
@@ -223,6 +224,7 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Dev-7 | `Persistent_dependency_faults_are_retried_then_reported_as_retryable` | 4 | R5.9, R5.10, R5.11, R5.13 | D1, D8, D13 |
 | Dev-8 | `Retry_After_is_honoured_and_a_recovered_dependency_succeeds` | 1 | R5.9, R5.13 | D8 |
 | Dev-9 | `Publish_failure_after_the_write_is_acknowledged_and_the_event_is_relayed_later` | 1 | R5.12, R5.14 | D1, D6, D7, D13 |
+| Dev-10 | `Circuit_opens_after_repeated_failures_and_closes_again_when_the_dependency_recovers` | 1 | R5.15 | D14 |
 
 ### `StockUpdateProcessorTests` (Proc): 9 methods, 14 cases
 
@@ -238,7 +240,7 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Proc-8 | `Event_arriving_while_a_bulk_row_for_the_same_key_is_in_flight_is_never_overwritten_by_the_older_row` | 1 | R5.4, R5.15 | None |
 | Proc-9 | `Output_eventId_is_deterministic_per_stock_key_and_version` | 1 | R5.13 | D7 |
 
-### `BulkImportEndpointTests` (Bulk): 11 methods, 14 cases
+### `BulkImportEndpointTests` (Bulk): 12 methods, 15 cases
 
 | ID | Test | Cases | Requirements | Decisions |
 |---|---|---|---|---|
@@ -253,6 +255,7 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Bulk-9 | `Form_body_that_cannot_be_parsed_is_rejected_with_400` | 2 | R4.3 | D9 |
 | Bulk-10 | `Csv_sent_as_a_url_encoded_form_is_rejected_with_400` | 1 | R4.3 | D9 |
 | Bulk-11 | `Upload_larger_than_the_request_size_limit_is_rejected_with_413` | 1 | R4.3 | D9 |
+| Bulk-12 | `Import_against_a_failing_dependency_stops_calling_it_and_reports_the_rows_as_retryable` | 1 | R5.15 | D14 |
 
 ### `StockCsvTests` (Csv): 5 methods, 11 cases
 

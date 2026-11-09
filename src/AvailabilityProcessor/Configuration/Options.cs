@@ -42,6 +42,26 @@ public sealed class ResilienceOptions
     public int MaxConcurrentRequests { get; set; } = 16;
 
     public int MaxQueuedRequests { get; set; } = 1000;
+
+    public CircuitBreakerOptions CircuitBreaker { get; set; } = new();
+}
+
+/// <summary>
+/// Circuit breaker of one dependency. While the circuit is open, calls fail at once without being sent,
+/// so a dependency that is down is not hit with more requests.
+/// </summary>
+public sealed class CircuitBreakerOptions
+{
+    /// <summary>The circuit opens when at least this share of the calls in the sampling window failed.</summary>
+    public double FailureRatio { get; set; } = 0.5;
+
+    /// <summary>Calls needed in the sampling window before the circuit can open, so a few isolated failures do not open it.</summary>
+    public int MinimumThroughput { get; set; } = 20;
+
+    public TimeSpan SamplingDuration { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>How long calls are rejected once the circuit opens. After that, one trial call decides whether it closes again.</summary>
+    public TimeSpan BreakDuration { get; set; } = TimeSpan.FromSeconds(5);
 }
 
 public sealed class BulkImportOptions

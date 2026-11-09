@@ -179,6 +179,28 @@ public sealed class BulkImportEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_against_a_failing_dependency_stops_calling_it_and_reports_the_rows_as_retryable()
+    {
+        // The Availability API answers 503 to every write. Retrying each of the 200 rows would cost 600 calls
+        // (three attempts per row). The circuit opens after about 20 failed calls, and the other rows fail at once.
+        _app.Dependencies.Override = request =>
+            request.Method == "PUT" ? FakeDependencies.Json(HttpStatusCode.ServiceUnavailable, "{}") : null;
+        var csv = new StringBuilder("sellerId,productId,sizeId,countryCode,availableQuantity,sourceVersion\n");
+        for (var row = 1; row <= 200; row++)
+        {
+            csv.Append($"seller-{row:D3},style-{row},size-34,PT,1,1\n");
+        }
+
+        var response = await _client.PostAsync("/v1/availability/imports", new StringContent(csv.ToString(), Encoding.UTF8, "text/csv"));
+        var job = await WaitForCompletion(response);
+
+        Assert.Equal(ImportJobStatus.CompletedWithErrors, job.Status);
+        Assert.Equal((200, 0, 200), (job.TotalRows, job.SucceededRows, job.FailedRows));
+        Assert.All(job.RowResults, row => Assert.Equal((OutcomeCodes.AvailabilityWriteFailed, true), (row.Code, row.Retryable)));
+        Assert.InRange(_app.Dependencies.Where("PUT", "/v1/availability/").Count, 20, 100);
+    }
+
+    [Fact]
     public async Task Unknown_job_returns_404()
     {
         var response = await _client.GetAsync($"/v1/availability/imports/{Guid.NewGuid()}");

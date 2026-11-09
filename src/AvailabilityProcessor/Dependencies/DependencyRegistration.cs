@@ -50,7 +50,18 @@ public static class DependencyRegistration
                 ShouldRetryAfterHeader = true,
             });
 
-            // 4. Timeout for each individual attempt.
+            // 4. Circuit breaker: when most of the recent calls failed, the dependency is treated as down. Calls are
+            //    then rejected without being sent, until a trial call succeeds. It sits inside the retry, so every
+            //    attempt counts, and a rejected call is not retried: it fails at once.
+            pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+            {
+                FailureRatio = options.CircuitBreaker.FailureRatio,
+                MinimumThroughput = options.CircuitBreaker.MinimumThroughput,
+                SamplingDuration = options.CircuitBreaker.SamplingDuration,
+                BreakDuration = options.CircuitBreaker.BreakDuration,
+            });
+
+            // 5. Timeout for each individual attempt.
             pipeline.AddTimeout(options.AttemptTimeout);
         });
 }

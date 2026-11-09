@@ -107,6 +107,7 @@ Both stock-change endpoints validate their input with the same rules and convert
 - Each dependency (Product Context API, Availability API, event sink) has its own pipeline. The values are set in the `Resilience` section of `appsettings.json`.
 - Only transient failures are retried: `408`, `429`, `5xx`, timeouts and network errors. `404` and the other `4xx` responses are final.
 - The limiter is the outermost layer, so a call keeps its permit while it waits to retry. A burst of `429` responses therefore slows callers down instead of piling up more requests.
+- The circuit breaker sits inside the retry, so every attempt counts. When at least half of 20 or more calls in 30 seconds have failed, it rejects calls for 5 seconds without sending them. A rejected call is not retried: it fails at once as a transient failure.
 - When the pipeline gives up, the client throws a `DependencyException`. Its `IsTransient` flag tells the processor whether the failure is temporary or permanent.
 
 ## 10. Background work

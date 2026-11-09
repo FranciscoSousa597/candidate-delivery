@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Polly.CircuitBreaker;
 using Polly.RateLimiting;
 using Polly.Timeout;
 
@@ -50,6 +51,11 @@ internal static class DependencyCalls
         catch (JsonException ex)
         {
             throw new DependencyException(dependency, $"Unreadable response body: {ex.Message}", isTransient: false, inner: ex);
+        }
+        catch (BrokenCircuitException ex)
+        {
+            // The circuit breaker is open: this dependency kept failing, so the call was rejected without being sent.
+            throw new DependencyException(dependency, "Circuit open after repeated failures; the call was not sent.", isTransient: true, inner: ex);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or TimeoutRejectedException
                                        or RateLimiterRejectedException or OperationCanceledException)
