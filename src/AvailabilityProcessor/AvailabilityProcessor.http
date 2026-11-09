@@ -1,0 +1,91 @@
+# Requests for VS Code REST Client, Rider or Visual Studio. Start the mocks (docker compose up -d) and the service first.
+@host = http://localhost:5000
+
+### Sample inventory event (wiremock/__files/sample-event.json)
+POST {{host}}/_dev/messages
+Content-Type: application/json
+
+< ../../wiremock/__files/sample-event.json
+
+### Same change replayed with a new eventId: skipped as DuplicateVersion
+POST {{host}}/_dev/messages
+Content-Type: application/json
+
+{
+  "eventId": "msg-0002",
+  "eventType": "SellerInventoryChanged",
+  "schemaVersion": 1,
+  "occurredAt": "2026-10-20T08:00:00Z",
+  "sellerId": "boutique-42",
+  "productId": "style-123",
+  "sizeId": "size-38",
+  "countryCode": "PT",
+  "availableQuantity": 3,
+  "sourceVersion": 7
+}
+
+### Older version arriving late: skipped as StaleVersion (send a version 8 first to see it)
+POST {{host}}/_dev/messages
+Content-Type: application/json
+
+{
+  "eventId": "msg-0006",
+  "eventType": "SellerInventoryChanged",
+  "schemaVersion": 1,
+  "occurredAt": "2026-10-20T07:59:00Z",
+  "sellerId": "boutique-42",
+  "productId": "style-123",
+  "sizeId": "size-38",
+  "countryCode": "PT",
+  "availableQuantity": 10,
+  "sourceVersion": 6
+}
+
+### Inactive product: 422 ProductInactive
+POST {{host}}/_dev/messages
+Content-Type: application/json
+
+{
+  "eventId": "msg-0100",
+  "eventType": "SellerInventoryChanged",
+  "schemaVersion": 1,
+  "occurredAt": "2026-10-20T08:00:00Z",
+  "sellerId": "boutique-42",
+  "productId": "style-9999",
+  "sizeId": "size-38",
+  "countryCode": "PT",
+  "availableQuantity": 1,
+  "sourceVersion": 1
+}
+
+### Availability API keeps failing (seller-503): 503 after retries
+POST {{host}}/_dev/messages
+Content-Type: application/json
+
+{
+  "eventId": "msg-0200",
+  "eventType": "SellerInventoryChanged",
+  "schemaVersion": 1,
+  "occurredAt": "2026-10-20T08:00:00Z",
+  "sellerId": "seller-503",
+  "productId": "style-123",
+  "sizeId": "size-38",
+  "countryCode": "PT",
+  "availableQuantity": 1,
+  "sourceVersion": 1
+}
+
+### Upload the 10,000-row CSV (raw body)
+POST {{host}}/v1/availability/imports
+Content-Type: text/csv
+
+< ../../wiremock/__files/bulk-stock.csv
+
+### Job status (paste the jobId returned by the upload)
+GET {{host}}/v1/availability/imports/00000000-0000-0000-0000-000000000000
+
+### Latest applied stock for a key
+GET {{host}}/_dev/stock/boutique-42/style-123/size-38?countryCode=PT
+
+### Events waiting to be published again
+GET {{host}}/_dev/outbox
