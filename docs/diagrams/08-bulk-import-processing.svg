@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="590" viewBox="0 0 820 590" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Bulk import job</title>
+  <desc id="desc">The background job starts, validates every row, loads one Product Context snapshot per country keeping only the contexts it needs, processes rows with up to eight stock keys in parallel through the same pipeline as single events, records each result and finishes as Completed or CompletedWithErrors. Invalid rows fail with their line number, an unavailable snapshot fails that country's rows as retryable, and an unexpected error or shutdown marks the job Failed.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="590" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">Bulk import job: one snapshot per country, then the same pipeline for every row</text>
+  <text x="24" y="56" font-size="13" fill="#5F5E5A">ImportJobRunner.RunAsync, run by ImportWorker in the background, one job at a time.</text>
+
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="60" y="80" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="225" y="100" font-size="14" font-weight="600" fill="#3C3489">1. Start the job</text>
+    <text x="225" y="118" fill="#534AB7">status Running</text>
+
+    <rect x="60" y="156" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="225" y="176" font-size="14" font-weight="600" fill="#3C3489">2. Validate every row</text>
+    <text x="225" y="194" fill="#534AB7">same rules as single events</text>
+
+    <rect x="60" y="232" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="225" y="252" font-size="14" font-weight="600" fill="#3C3489">3. Load one snapshot per country</text>
+    <text x="225" y="270" fill="#534AB7">stream it, keep only the contexts needed</text>
+
+    <rect x="60" y="308" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="225" y="328" font-size="14" font-weight="600" fill="#3C3489">4. Process rows, 8 keys in parallel</text>
+    <text x="225" y="346" fill="#534AB7">same pipeline; one key's rows in file order</text>
+
+    <rect x="60" y="384" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="225" y="404" font-size="14" font-weight="600" fill="#3C3489">5. Record each result</text>
+    <text x="225" y="422" fill="#534AB7">counters and row results (max 1,000)</text>
+
+    <rect x="60" y="460" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="225" y="480" font-size="14" font-weight="600" fill="#3C3489">6. Finish the job</text>
+    <text x="225" y="498" fill="#534AB7">Completed or CompletedWithErrors</text>
+
+    <rect x="450" y="156" width="330" height="56" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="615" y="176" font-size="14" font-weight="600" fill="#712B13">Invalid row</text>
+    <text x="615" y="194" fill="#993C1D">Failed (InvalidInput), line number kept</text>
+
+    <rect x="450" y="232" width="330" height="56" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="615" y="252" font-size="14" font-weight="600" fill="#712B13">Snapshot unavailable</text>
+    <text x="615" y="270" fill="#993C1D">that country's rows fail, retryable</text>
+
+    <rect x="450" y="308" width="330" height="56" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="615" y="328" font-size="14" font-weight="600" fill="#2C2C2A">Sample file (bulk-stock.csv)</text>
+    <text x="615" y="346" fill="#5F5E5A">1 snapshot request, 10,000 PUTs and events</text>
+
+    <rect x="450" y="460" width="330" height="56" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="615" y="480" font-size="14" font-weight="600" fill="#712B13">Unexpected error or shutdown</text>
+    <text x="615" y="498" fill="#993C1D">job status Failed</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M225 136 V152" marker-end="url(#arrow)"/>
+    <path d="M225 212 V228" marker-end="url(#arrow)"/>
+    <path d="M225 288 V304" marker-end="url(#arrow)"/>
+    <path d="M225 364 V380" marker-end="url(#arrow)"/>
+    <path d="M225 440 V456" marker-end="url(#arrow)"/>
+    <path d="M390 184 H446" marker-end="url(#arrow)"/>
+    <path d="M390 260 H446" marker-end="url(#arrow)"/>
+    <path d="M390 488 H446" marker-end="url(#arrow)"/>
+  </g>
+  <path d="M390 336 H446" fill="none" stroke="#888780" stroke-width="1.2" stroke-dasharray="4 3"/>
+
+  <g font-size="12" fill="#5F5E5A">
+    <rect x="60" y="554" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
+    <text x="78" y="560" dominant-baseline="central">Step</text>
+    <rect x="130" y="554" width="12" height="12" rx="2" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="148" y="560" dominant-baseline="central">Failure</text>
+    <rect x="210" y="554" width="12" height="12" rx="2" fill="#F1EFE8" stroke="#888780"/>
+    <text x="228" y="560" dominant-baseline="central">Note</text>
+  </g>
+</svg>

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="370" viewBox="0 0 820 370" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Entry points</title>
+  <desc id="desc">An inventory event goes to POST /_dev/messages and a stock file goes to POST /v1/availability/imports. Both become the same internal StockUpdate, handled by one processing pipeline. The upload also creates an import job, whose status GET /v1/availability/imports/{jobId} returns.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="370" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">Entry points: two endpoints carry stock changes, one reports on imports</text>
+  <text x="24" y="56" font-size="13" fill="#5F5E5A">Both stock-change endpoints validate their input with the same rules and produce the same internal StockUpdate.</text>
+
+  <g>
+    <rect x="20" y="80" width="200" height="56" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="120" y="100" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#2C2C2A">Inventory event (JSON)</text>
+    <text x="120" y="118" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">e.g. sample-event.json</text>
+  </g>
+  <g>
+    <rect x="20" y="170" width="200" height="56" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="120" y="190" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#2C2C2A">Stock file (CSV)</text>
+    <text x="120" y="208" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">e.g. bulk-stock.csv</text>
+  </g>
+  <g>
+    <rect x="20" y="260" width="200" height="56" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="120" y="280" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#2C2C2A">Import job id</text>
+    <text x="120" y="298" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">returned by the upload</text>
+  </g>
+
+  <g>
+    <rect x="255" y="80" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="420" y="100" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">POST /_dev/messages</text>
+    <text x="420" y="118" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">responds after processing</text>
+  </g>
+  <g>
+    <rect x="255" y="170" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="420" y="190" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">POST /v1/availability/imports</text>
+    <text x="420" y="208" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">responds 202 + jobId immediately</text>
+  </g>
+  <g>
+    <rect x="255" y="260" width="330" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="420" y="280" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">GET /v1/availability/imports/{jobId}</text>
+    <text x="420" y="298" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">job state, counts, row results</text>
+  </g>
+
+  <g>
+    <rect x="620" y="80" width="180" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="710" y="100" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#085041">StockUpdate</text>
+    <text x="710" y="118" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0F6E56">common internal format</text>
+  </g>
+  <g>
+    <rect x="620" y="170" width="180" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="710" y="190" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#085041">Processing pipeline</text>
+    <text x="710" y="208" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0F6E56">shared by both inputs</text>
+  </g>
+  <g>
+    <rect x="620" y="260" width="180" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="710" y="280" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#085041">Import job</text>
+    <text x="710" y="298" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#0F6E56">status and counts</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M220 108 H251" marker-end="url(#arrow)"/>
+    <path d="M220 198 H251" marker-end="url(#arrow)"/>
+    <path d="M220 288 H251" marker-end="url(#arrow)"/>
+    <path d="M585 100 H616" marker-end="url(#arrow)"/>
+    <path d="M585 184 H602 V120 H616" marker-end="url(#arrow)"/>
+    <path d="M710 136 V166" marker-end="url(#arrow)"/>
+    <path d="M585 212 H602 V278 H616" marker-end="url(#arrow)"/>
+    <path d="M585 300 H616" marker-end="url(#arrow)"/>
+    <path d="M710 226 V256" marker-end="url(#arrow)"/>
+  </g>
+
+  <g font-size="12" fill="#5F5E5A">
+    <rect x="20" y="338" width="12" height="12" rx="2" fill="#F1EFE8" stroke="#888780"/>
+    <text x="38" y="344" dominant-baseline="central">What callers send</text>
+    <rect x="190" y="338" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
+    <text x="208" y="344" dominant-baseline="central">Public endpoints</text>
+    <rect x="350" y="338" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="368" y="344" dominant-baseline="central">Inside the service</text>
+  </g>
+</svg>

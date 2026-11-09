@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="590" viewBox="0 0 820 590" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Background work</title>
+  <desc id="desc">An accepted upload goes into an in-memory queue of at most 10 jobs. ImportWorker takes one job at a time and runs ImportJobRunner. An import job moves from Queued to Running and ends as Completed, CompletedWithErrors or Failed. Separately, when publishing fails after retries, the processor puts the event in PendingEventOutbox. OutboxRelayService reads it every 10 seconds and publishes it to the event sink. If publishing fails again, the event stays pending.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="590" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">Background work: one import worker and one outbox relay</text>
+  <text x="24" y="56" font-size="13" fill="#5F5E5A">Both are hosted services that start with the application. Single events are processed inside their HTTP request.</text>
+
+  <text x="20" y="84" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">Import worker</text>
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="20" y="96" width="220" height="56" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="130" y="116" font-size="14" font-weight="600" fill="#2C2C2A">Upload accepted</text>
+    <text x="130" y="134" fill="#5F5E5A">POST /v1/availability/imports</text>
+    <rect x="260" y="96" width="150" height="56" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="335" y="116" font-size="14" font-weight="600" fill="#2C2C2A">ImportQueue</text>
+    <text x="335" y="134" fill="#5F5E5A">in memory, max 10</text>
+    <rect x="430" y="96" width="160" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="510" y="116" font-size="14" font-weight="600" fill="#3C3489">ImportWorker</text>
+    <text x="510" y="134" fill="#534AB7">one job at a time</text>
+    <rect x="610" y="96" width="190" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="705" y="116" font-size="14" font-weight="600" fill="#3C3489">ImportJobRunner</text>
+    <text x="705" y="134" fill="#534AB7">rows, snapshot, 8 keys</text>
+  </g>
+
+  <text x="20" y="186" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">Import job states</text>
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="20" y="214" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="120" y="234" font-size="14" font-weight="600" fill="#3C3489">Queued</text>
+    <text x="120" y="252" fill="#534AB7">waiting in the queue</text>
+    <rect x="280" y="214" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="380" y="234" font-size="14" font-weight="600" fill="#3C3489">Running</text>
+    <text x="380" y="252" fill="#534AB7">the worker picked it up</text>
+    <rect x="560" y="170" width="240" height="48" rx="8" fill="#EAF3DE" stroke="#3B6D11"/>
+    <text x="680" y="186" font-size="13" font-weight="600" fill="#27500A">Completed</text>
+    <text x="680" y="204" fill="#3B6D11">no row failed</text>
+    <rect x="560" y="226" width="240" height="48" rx="8" fill="#FAEEDA" stroke="#854F0B"/>
+    <text x="680" y="242" font-size="13" font-weight="600" fill="#633806">CompletedWithErrors</text>
+    <text x="680" y="260" fill="#854F0B">at least one row failed</text>
+    <rect x="560" y="282" width="240" height="48" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="680" y="298" font-size="13" font-weight="600" fill="#712B13">Failed</text>
+    <text x="680" y="316" fill="#993C1D">unexpected error or shutdown</text>
+  </g>
+
+  <text x="20" y="370" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">Outbox relay</text>
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="20" y="386" width="230" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="135" y="406" font-size="14" font-weight="600" fill="#3C3489">Stock update processor</text>
+    <text x="135" y="424" fill="#534AB7">publish failed after retries</text>
+    <rect x="290" y="386" width="220" height="56" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="400" y="406" font-size="14" font-weight="600" fill="#2C2C2A">PendingEventOutbox</text>
+    <text x="400" y="424" fill="#5F5E5A">waiting events, by eventId</text>
+    <rect x="550" y="386" width="250" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="675" y="406" font-size="14" font-weight="600" fill="#3C3489">OutboxRelayService</text>
+    <text x="675" y="424" fill="#534AB7">every 10 s, retries each event</text>
+    <rect x="550" y="496" width="250" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="675" y="516" font-size="14" font-weight="600" fill="#085041">Event sink</text>
+    <text x="675" y="534" fill="#0F6E56">a Kafka producer in production</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M240 124 H256" marker-end="url(#arrow)"/>
+    <path d="M410 124 H426" marker-end="url(#arrow)"/>
+    <path d="M590 124 H606" marker-end="url(#arrow)"/>
+    <path d="M220 242 H276" marker-end="url(#arrow)"/>
+    <path d="M480 242 H520 V194 H556" marker-end="url(#arrow)"/>
+    <path d="M480 242 H520 V250 H556" marker-end="url(#arrow)"/>
+    <path d="M480 242 H520 V306 H556" marker-end="url(#arrow)"/>
+    <path d="M250 414 H286" marker-end="url(#arrow)"/>
+    <path d="M510 414 H546" marker-end="url(#arrow)"/>
+    <path d="M720 442 V492" marker-end="url(#arrow)"/>
+    <path d="M600 442 V466 H400 V446" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="12" fill="#5F5E5A">
+    <text x="728" y="470" dominant-baseline="central">published</text>
+    <text x="500" y="482" text-anchor="middle" dominant-baseline="central">fails again: stays pending</text>
+  </g>
+
+  <g font-size="12" fill="#5F5E5A">
+    <rect x="20" y="564" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
+    <text x="38" y="570" dominant-baseline="central">Service code or job in progress</text>
+    <rect x="250" y="564" width="12" height="12" rx="2" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="268" y="570" dominant-baseline="central">In-memory structure</text>
+    <rect x="410" y="564" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="428" y="570" dominant-baseline="central">Dependency</text>
+  </g>
+</svg>

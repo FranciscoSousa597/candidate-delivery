@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="640" viewBox="0 0 820 640" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Proposed production messaging</title>
+  <desc id="desc">Inbound: the seller integration publishes SellerInventoryChanged to an inbound Kafka topic keyed by stock key. A Kafka consumer calls the existing handler. Applied or skipped messages are committed, invalid or permanently failing ones go to a dead-letter topic, and transient failures go to a delayed retry topic. Outbound: the handler and processor write the stock, record the version and an outbox row. An outbox relay with a Kafka producer publishes SizeAvailabilityUpdated to a log-compacted outbound topic, read by downstream consumers that deduplicate by eventId.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="640" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">Proposed production messaging: Kafka, keyed by stock key</text>
+  <text x="24" y="56" font-size="13" fill="#5F5E5A">Not part of the exercise: the brief asks to describe the production broker and how it connects to the code.</text>
+
+  <text x="20" y="84" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">Inbound</text>
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="20" y="96" width="360" height="56" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="200" y="116" font-size="14" font-weight="600" fill="#2C2C2A">Seller integration</text>
+    <text x="200" y="134" fill="#5F5E5A">publishes each stock change</text>
+
+    <rect x="20" y="176" width="360" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5"/>
+    <text x="200" y="196" font-size="14" font-weight="600" fill="#0C447C">Inbound topic</text>
+    <text x="200" y="214" fill="#185FA5">SellerInventoryChanged, key = stock key</text>
+
+    <rect x="20" y="256" width="360" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="200" y="276" font-size="14" font-weight="600" fill="#3C3489">Kafka consumer</text>
+    <text x="200" y="294" fill="#534AB7">calls SellerInventoryChangedHandler</text>
+
+    <rect x="60" y="350" width="320" height="56" rx="8" fill="#EAF3DE" stroke="#3B6D11"/>
+    <text x="220" y="370" font-size="14" font-weight="600" fill="#27500A">Applied or skipped</text>
+    <text x="220" y="388" fill="#3B6D11">commit the offset</text>
+
+    <rect x="60" y="420" width="320" height="56" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="220" y="440" font-size="14" font-weight="600" fill="#712B13">Invalid or permanent failure</text>
+    <text x="220" y="458" fill="#993C1D">send to a dead-letter topic, then commit</text>
+
+    <rect x="60" y="490" width="320" height="56" rx="8" fill="#FAEEDA" stroke="#854F0B"/>
+    <text x="220" y="510" font-size="14" font-weight="600" fill="#633806">Transient failure</text>
+    <text x="220" y="528" fill="#854F0B">send to a delayed retry topic, read again</text>
+  </g>
+
+  <text x="430" y="240" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">Outbound</text>
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="430" y="256" width="370" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="615" y="276" font-size="14" font-weight="600" fill="#3C3489">Handler and processor</text>
+    <text x="615" y="294" fill="#534AB7">write stock, record version and an outbox row</text>
+
+    <rect x="430" y="336" width="370" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="615" y="356" font-size="14" font-weight="600" fill="#3C3489">Outbox relay and Kafka producer</text>
+    <text x="615" y="374" fill="#534AB7">acks=all, idempotent, key = stock key</text>
+
+    <rect x="430" y="416" width="370" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5"/>
+    <text x="615" y="436" font-size="14" font-weight="600" fill="#0C447C">Outbound topic</text>
+    <text x="615" y="454" fill="#185FA5">SizeAvailabilityUpdated, log-compacted</text>
+
+    <rect x="430" y="496" width="370" height="56" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="615" y="516" font-size="14" font-weight="600" fill="#2C2C2A">Downstream consumers</text>
+    <text x="615" y="534" fill="#5F5E5A">drop duplicates by eventId, keep the highest version</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M200 152 V172" marker-end="url(#arrow)"/>
+    <path d="M200 232 V252" marker-end="url(#arrow)"/>
+    <path d="M40 312 V378 H56" marker-end="url(#arrow)"/>
+    <path d="M40 312 V448 H56" marker-end="url(#arrow)"/>
+    <path d="M40 312 V518 H56" marker-end="url(#arrow)"/>
+    <path d="M380 284 H426" marker-end="url(#arrow)"/>
+    <path d="M615 312 V332" marker-end="url(#arrow)"/>
+    <path d="M615 392 V412" marker-end="url(#arrow)"/>
+    <path d="M615 472 V492" marker-end="url(#arrow)"/>
+  </g>
+
+  <g font-size="12" fill="#5F5E5A">
+    <rect x="20" y="578" width="12" height="12" rx="2" fill="#E6F1FB" stroke="#185FA5"/>
+    <text x="38" y="584" dominant-baseline="central">Kafka topic</text>
+    <rect x="130" y="578" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
+    <text x="148" y="584" dominant-baseline="central">This service</text>
+    <rect x="245" y="578" width="12" height="12" rx="2" fill="#F1EFE8" stroke="#888780"/>
+    <text x="263" y="584" dominant-baseline="central">Other systems</text>
+    <text x="370" y="584" dominant-baseline="central">Green, red, amber: what the consumer does with a message</text>
+    <text x="20" y="612" dominant-baseline="central">In this exercise, POST /_dev/messages replaces the consumer and the WireMock event sink replaces the producer.</text>
+  </g>
+</svg>

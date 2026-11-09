@@ -1,0 +1,314 @@
+# Size-Level Availability Processor
+
+An ASP.NET Core (.NET 10) service that receives seller stock changes, enriches them with canonical product context, writes them to the Availability API and publishes a normalized `SizeAvailabilityUpdated` event.
+
+Stock changes arrive one at a time (an inventory event) or in bulk (a CSV import processed asynchronously). **Both go through the same processing code**; only the way product context is fetched differs.
+
+This file describes the solution. The assignment is in the PDF, and the original instructions for the provided mocks are in [README.md](README.md), unchanged. Diagrams are in [docs/architecture.md](docs/architecture.md).
+
+## Quick start
+
+Prerequisites: **.NET 10 SDK**, and **Docker** for the provided WireMock mocks.
+
+```powershell
+docker compose up -d                               # provided mocks on http://localhost:8080
+dotnet run --project src/AvailabilityProcessor     # this service on http://localhost:5000
+```
+
+Send the sample event (PowerShell, from the repository root):
+
+```powershell
+curl.exe --request POST "http://localhost:5000/_dev/messages" `
+  --header "Content-Type: application/json" `
+  --data-binary "@wiremock\__files\sample-event.json"
+```
+
+Import the 10,000-row CSV and follow the job (use the `statusUrl` returned by the upload):
+
+```powershell
+curl.exe -F "file=@wiremock\__files\bulk-stock.csv" http://localhost:5000/v1/availability/imports
+curl.exe http://localhost:5000/v1/availability/imports/<jobId>
+```
+
+The CSV can also be sent as a raw body: `--header "Content-Type: text/csv" --data-binary "@wiremock\__files\bulk-stock.csv"`.
+
+- Inspect the calls the service made: <http://localhost:8080/__admin/requests>.
+- Ready-made requests: [AvailabilityProcessor.http](src/AvailabilityProcessor/AvailabilityProcessor.http).
+- All settings (dependency URLs, retries, parallelism) are in [appsettings.json](src/AvailabilityProcessor/appsettings.json).
+- The service calls the mocks at `http://127.0.0.1:8080`, not `localhost`. Compose publishes the port on 127.0.0.1 only, and on Windows `localhost` resolves to `::1` first, which adds about 2 s to every new connection.
+
+Run the tests (Docker is not needed):
+
+```powershell
+dotnet test
+```
+
+## API
+
+| Route | Purpose | Responses |
+|---|---|---|
+| `POST /_dev/messages` | Test-only ingress for a `SellerInventoryChanged` event. Calls the same handler a broker consumer would. | `200` applied or skipped, `400` invalid message, `422` permanent failure, `503` transient failure |
+| `POST /v1/availability/imports` | CSV upload: multipart field `file`, or a `text/csv` body | `202` with `jobId` and `Location`, `400` no file, unreadable form body or bad header, `413` upload over the size limit, `415` wrong media type, `503` import queue full |
+| `GET /v1/availability/imports/{jobId}` | Job status, counts and row-level results | `200`, `404` |
+| `GET /_dev/stock/{sellerId}/{productId}/{sizeId}?countryCode=PT` | Latest applied version and quantity of a stock key | `200`, `404` |
+| `GET /_dev/outbox` | Events waiting to be published again | `200` |
+
+The status codes of `POST /_dev/messages` mirror what a broker consumer would do with the message: `200` ack, `400` dead-letter (poison message), `422` dead-letter or park, `503` do not ack, so it is redelivered later.
+
+```json
+{"status":"Applied","code":"Applied","message":"Availability updated and SizeAvailabilityUpdated published.","retryable":false,"outputEventId":"8d2370cd-f891-e548-ea00-f91e99597d1e","eventPublished":true}
+```
+
+## How it works
+
+```text
+POST /_dev/messages ─► SellerInventoryChangedHandler ─────────────┐
+ (a broker consumer would call the same handler)                  │
+                                                                  ▼
+POST /v1/availability/imports ─► 202 + jobId          StockUpdateProcessor (shared)
+        │                                               1. version check, under a per-key lock
+        ▼                                               2. product context ◄─ single lookup (events)
+  ImportQueue ─► ImportWorker ─► ImportJobRunner ─────►                    ◄─ country snapshot (bulk)
+                 validate rows, 1 snapshot per          3. PUT availability
+                 country, rows in parallel              4. record the applied version
+                                                        5. publish SizeAvailabilityUpdated
+                                                           (outbox + relay if publishing fails)
+```
+
+| Folder (`src/AvailabilityProcessor`) | Contents |
+|---|---|
+| `Domain` | `StockKey`, `StockUpdate`, validation rules shared by both inputs, `ProcessingResult` |
+| `Processing` | `StockUpdateProcessor` (the shared flow), applied-version store, per-key lock, outbox and relay |
+| `Messaging` | `SellerInventoryChangedHandler`, the entry point for inbound messages |
+| `Imports` | CSV reader, import job state, queue, worker and runner |
+| `Dependencies` | HTTP clients for the three dependencies and their resilience pipeline |
+| `Api` | Minimal API endpoints |
+
+## Design decisions
+
+### Versions, duplicates and stale updates
+
+- The stock key is `(sellerId, productId, sizeId, countryCode)`. A store keeps the latest **successfully applied** `sourceVersion` (and quantity) per key. Events and CSV rows share it.
+- Lower version than the applied one: skipped as `StaleVersion`. Same version: skipped as `DuplicateVersion`, which covers redeliveries and replays even when they carry a new `eventId`. Higher version: applied.
+- `eventId` is not used for de-duplication, because a replay may change it. It is kept as `causationId` on the output event for tracing.
+- The version check, the availability write and the version update run under a **per-key lock** (striped semaphores). An event and a bulk row for the same key cannot interleave, even while a job is running. Without the lock, v7 could reach the gateway after v8; a test reproduces that race.
+- Only a successful write advances the version. A failed update leaves it unchanged, so a redelivery can still apply it.
+- The same version with a different quantity is treated as a duplicate (the applied value wins) and logged as a warning.
+
+### Unknown, inactive and disabled products
+
+| Product Context answer | Outcome |
+|---|---|
+| `404` | `ProductContextNotFound` |
+| `productStatus` other than `ACTIVE` | `ProductInactive` |
+| `countryEnabled: false` | `CountryNotEnabled` |
+
+All three are permanent failures. There is no availability write and no event, and the version is not recorded, so the update can still be applied if replayed after the product becomes sellable. The service cannot publish a normalized event without canonical context, and it should not expose availability for something that cannot be sold in that country. In production these messages go to a dead-letter or parking topic for replay. The trade-off is that the seller's quantity for an inactive product is not kept meanwhile.
+
+### Retries
+
+Each dependency has its own pipeline (`Microsoft.Extensions.Http.Resilience`, which is built on Polly). Strategies are listed from outer to inner:
+
+| Strategy | Default |
+|---|---|
+| Concurrency limiter | 16 calls in flight per dependency, 1,000 queued |
+| Total timeout | 60 s per logical call, retries included |
+| Retry | 3 retries for 408, 429, 5xx, network errors and timeouts. Exponential backoff from 200 ms with jitter, capped at 5 s. **`Retry-After` is honoured.** |
+| Attempt timeout | 10 s |
+
+`404` and other 4xx answers are final. When retries are exhausted, an event gets `503` (redeliver later) and a CSV row is reported as failed with `retryable: true`.
+
+Retrying is safe on both write paths:
+
+- `PUT` is idempotent and carries `sourceVersion`.
+- The `POST` to the sink is also retried, because the output `eventId` is deterministic (a hash of the stock key and version). Consumers can drop duplicates by `eventId`.
+
+Trade-off: honouring the mock's `Retry-After: 5` with 3 retries holds one message for about 15 s. With a real broker, a long `Retry-After` should send the message to a delayed retry topic instead of blocking the partition.
+
+### Gateway write succeeded, but publishing failed
+
+1. The version is recorded right after the successful write. Otherwise an older update could pass the version check later and overwrite the stock.
+2. Publishing is not cancelled when the caller goes away, because the stock has already changed.
+3. If publishing still fails after its retries, the event is stored in the outbox. `OutboxRelayService` retries it every 10 s with the **same** `eventId`. The result is `Applied` with `eventPublished: false`, and the message is acknowledged. A redelivery is a duplicate and does not write again.
+
+In production this becomes a transactional outbox. The version update and the outbox row are committed in one database transaction, and a relay (or change data capture) publishes the rows. Delivery is at-least-once, so consumers de-duplicate by `eventId` and keep the highest `sourceVersion` per key, since a parked v7 may arrive after v8.
+
+### Bulk imports and partial failures
+
+- **Rejected synchronously:**
+  - an unsupported media type (`415`);
+  - an upload over the request size limit of about 30 MB (`413`);
+  - a form body that cannot be parsed, for example multipart content without a boundary (`400`);
+  - no file (`400`);
+  - an empty file (`400`);
+  - a header without the six required columns (`400`). Columns can be in any order, names are case-insensitive and extra columns are ignored.
+  - a header with a duplicated column (`400`).
+- **Otherwise accepted with `202` straight away.** Rows are processed asynchronously:
+  1. Each row is validated with the same rules as events.
+  2. Its context comes from the snapshot.
+  3. It goes through the same `StockUpdateProcessor`.
+- **Counts:** `processedRows = succeededRows + skippedRows + failedRows`.
+  - **Succeeded:** written, and the event was published or queued in the outbox.
+  - **Skipped:** stale and duplicate rows. These are not errors: the stock already holds an equal or newer version, and a stale row never causes a write or an event.
+  - **Failed:** invalid row, unknown, inactive or disabled product, or a dependency failure after retries. `retryable` says whether submitting the row again can help.
+- **`rowResults`** lists every row that was not applied. Each entry has the line number in the file (the header is line 1), the outcome, a code, a message and `retryable`. The list is capped at 1,000 entries (`rowResultsTruncated` says when the cap was hit), but the counts are always exact.
+- **Job `status`:**
+  - `Completed`: no failed rows.
+  - `CompletedWithErrors`: partial failure.
+  - `Failed`: the job itself was interrupted, for example by a shutdown.
+- **Recovery:** upload the same file again, or only the failed rows. Rows that were already applied are skipped as duplicates, so this is safe. A test re-imports the 10,000-row fixture and checks that nothing is written twice.
+- **Snapshot failures:** if a country's snapshot cannot be fetched, that country's rows fail as retryable (`ProductContextUnavailable`). A `404` snapshot means an unknown country, so its rows fail with `ProductContextNotFound`.
+
+Abridged status of a mixed file (from the tests):
+
+```json
+{
+  "jobId": "4b3b8f5e-8d5f-4b8e-9a43-3f2f1c9d2a10",
+  "status": "CompletedWithErrors",
+  "totalRows": 8, "processedRows": 8, "succeededRows": 1, "skippedRows": 2, "failedRows": 5,
+  "rowResults": [
+    { "line": 2, "outcome": "Skipped", "code": "StaleVersion", "message": "Version 7 of boutique-42/style-123/size-38/PT is older than the applied version 8.", "retryable": false },
+    { "line": 5, "outcome": "Failed", "code": "ProductInactive", "message": "Product style-9999 is INACTIVE.", "retryable": false },
+    { "line": 8, "outcome": "Failed", "code": "AvailabilityWriteFailed", "message": "availability-api: HTTP 503 Service Unavailable ...", "retryable": true }
+  ],
+  "rowResultsTruncated": false
+}
+```
+
+### Concurrency and flow control
+
+- **Imports:** one job runs at a time. Inside a job, up to 8 stock keys are processed in parallel (`BulkImport:MaxDegreeOfParallelism`). Rows of the same key are processed in file order.
+- **Per-dependency limiter:** shared by events, imports and the outbox relay, so a burst never puts more than 16 concurrent calls on any dependency; extra calls wait in a bounded queue. A call keeps its permit while it waits for `Retry-After`, so 429s slow the callers down instead of piling up more requests.
+- **Bounded import queue:** at most 10 jobs wait. When it is full, uploads get `503` instead of unbounded work being accepted.
+- **In production:** consumer concurrency is bounded by partitions × instances, partitions are paused during 429 storms, and a circuit breaker and a rate limiter are tuned to each dependency's quota.
+
+## Crashes, restarts and atomicity
+
+All state lives in memory. That is acceptable for the exercise, but not for production. This section covers three things: what a crash loses today, which steps are atomic, and what production would add.
+
+### What a crash or restart loses today
+
+| In memory | After a crash or restart | Effect |
+|---|---|---|
+| Applied versions | Forgotten | **The most serious gap.** An older message that arrives after the restart is accepted as new and can overwrite newer stock in the Availability API. |
+| Outbox (events waiting to be published) | Lost | Those events are never published. Consumers miss the change until a newer version of the same key arrives. |
+| Running import job | Stops part-way | Some rows are applied and some are not. The job disappears, so its status endpoint returns `404`. |
+| Queued import jobs | Lost, with their file content | The files must be uploaded again. |
+| Event being processed | The HTTP request fails | Sending it again is safe. If the `PUT` had already happened, it is repeated with the same version. |
+
+A graceful shutdown marks the running job `Failed`, but that status is also lost when the process exits.
+
+### Atomicity
+
+There is no transaction that covers the Availability API, the applied version and the event together. They live in different systems, reached over HTTP, so no single transaction can span them. Instead, the service relies on three things:
+
+- the order of the steps;
+- idempotency (repeating a step has no extra effect);
+- the outbox.
+
+As a result, a failure at any point either leaves nothing changed, or the state converges once the message is delivered again.
+
+| Where processing stops | State left behind | How it converges |
+|---|---|---|
+| Before the `PUT`, or the `PUT` fails | Nothing changed; the version is not recorded | The caller gets `503` and retries; the change is applied later |
+| The `PUT` reached the gateway but the response was lost (timeout) | Stock may have changed; the version is not recorded | The retried message repeats the `PUT` with the same version, which is idempotent |
+| A crash after the `PUT`, before publishing | Stock changed; the event is not published | Today the event is lost, because the outbox is in memory. In production, the transactional outbox and broker redelivery close this gap (see below). |
+| Publishing fails after retries | Stock changed; version recorded; event in the outbox | The relay publishes it later with the same `eventId` |
+
+Inside the service:
+
+- **One stock key at a time.** The key lock makes "check version, write, record version" indivisible for a key. Two updates for the same key cannot interleave within one process.
+- **Recorded versions only move forward.** The store keeps the higher version even if two writers race.
+- **Publishing is not cancelled when the caller disconnects.** Once the stock is written, the event is either published or queued.
+- **An upload is accepted or rejected as a whole.** If the queue is full, the job is removed before `503` is returned, so no orphan job is left behind.
+- **Imports are atomic per row, not per file, by design.** The brief asks for partial-failure reporting, and one bad or stale row must not block the others. Running a file again is safe: rows that were already applied are skipped.
+- **The job status is always consistent.** Job counters are updated atomically (`Interlocked`), and the status and row results are updated under a lock, so `GET` never shows a half-written state.
+
+### What production would add
+
+1. **Applied versions in a database,** written with a conditional update (`UPDATE … WHERE version < @new`). The versions survive restarts, and the check works across instances.
+2. **A transactional outbox.** The applied version and the outgoing event are written in one database transaction, and a relay publishes the outbox rows. A crash cannot lose the event; at worst the relay publishes it twice, with the same `eventId`.
+3. **Commit after processing.** The Kafka consumer commits the offset only after the handler returns, so a message interrupted by a crash is delivered again. Combined with the idempotent `PUT` and the outbox, every change is eventually applied, and repeated work has no extra effect.
+4. **Durable, resumable imports.** The uploaded file goes to blob storage and the job to a table. On start-up, the worker resumes jobs that were `Queued` or `Running`; the version check skips rows that were already applied.
+5. **A version check in the Availability API.** If the API rejects writes older than the version it holds, lost state in this service can never cause an overwrite.
+6. **Graceful shutdown.** On shutdown, the service stops accepting uploads, then finishes the current job or records how far it got before the process exits.
+
+## Bulk context matching: time and space complexity
+
+Let *n* be the CSV rows, *m* the snapshot objects of the countries in the file, *k* ≤ *n* the distinct `(productId, sizeId, countryCode)` keys the rows need, and *c* the number of countries.
+
+1. Collect the needed keys in a hash set: **O(n)** time, **O(k)** space.
+2. Fetch **one snapshot per country** (*c* requests instead of *n*). Stream it with `JsonSerializer.DeserializeAsyncEnumerable` and keep only the objects whose key is in the set: **O(m)** time, **O(k)** space. The 34.6 MB, 50,000-object snapshot is never held in memory; only the 10,000 contexts the file needs are.
+3. Each row finds its context with a dictionary lookup: O(1) on average, **O(n)** in total.
+
+**Total: O(n + m) time and O(n) memory** (the rows dominate). For comparison, scanning the snapshot for every row is O(n·m), about 5×10⁸ comparisons here, and looking up every row over HTTP costs *n* round trips.
+
+As both collections grow, time grows linearly in each, and memory follows the upload, not the snapshot. Next steps at larger scale:
+
+- For much bigger uploads, stream the CSV from blob storage in chunks instead of holding it in memory.
+- For snapshots too large to download for every job, cache them (ETag or version), or keep a local product-context store fed by product-change events.
+- If both sides become huge and unsorted, an external sort-merge join (O(n log n + m log m) with bounded memory) is the fallback.
+
+## Production broker: Kafka
+
+- **Ordering per key:** the partition key is the stock key, so every update of a key is consumed in order by a single consumer. This replaces the in-process lock across instances, and consumer groups scale out up to the number of partitions.
+- **Durable, replayable log:** stock changes can be reprocessed after a bug fix, or state can be rebuilt.
+- **Output topic:** keyed the same way and log-compacted, so new consumers can bootstrap the latest availability per key.
+- **Connecting it to the code:**
+  - A consumer (Confluent.Kafka or KafkaFlow) deserializes `SellerInventoryChanged` and calls `SellerInventoryChangedHandler.HandleAsync`, the method `POST /_dev/messages` calls today.
+  - It maps the result: applied or skipped commits the offset; invalid or permanent failures go to a dead-letter topic and then commit; transient failures go to a delayed retry topic, so they do not block the partition.
+  - `IEventPublisher` gets a Kafka producer implementation (`acks=all`, `enable.idempotence=true`, key = stock key), fed by the outbox relay.
+- **Alternatives:** Azure Service Bus sessions (`SessionId` = stock key) or SQS FIFO (`MessageGroupId` = stock key) also give per-key ordering, if the platform already uses them. RabbitMQ needs extra work (a consistent-hash exchange or a single active consumer) to keep per-key order.
+
+## Assumptions
+
+- `sourceVersion` is a non-negative integer, monotonic per stock key, and comes from one sequence shared by events and CSV rows.
+- `countryCode` must be two letters and is normalized to upper case, so `pt` and `PT` are the same stock stream. Only the format is checked, not the ISO list.
+- `availableQuantity` is an integer ≥ 0.
+- Inbound messages must have `eventType` `SellerInventoryChanged` and `schemaVersion` 1. `occurredAt` is required but not used for ordering; `sourceVersion` is.
+- Output event fields:
+  - `occurredAt` is the processing time.
+  - `eventId` is deterministic.
+  - `causationId` is the inbound `eventId`, or `import:{jobId}:line:{n}` for CSV rows.
+  - `productContext` adds `category` and `color` to the fields shown in the brief.
+- Single instance with in-memory state (versions, jobs, outbox), so everything is lost on restart. See [Crashes, restarts and atomicity](#crashes-restarts-and-atomicity).
+- Uploads are read into memory and limited by Kestrel's default request size of about 30 MB; a larger upload gets `413`. The fixture is 375 KB.
+
+## Tests
+
+`dotnet test` runs 56 tests in a few seconds, without Docker.
+
+[docs/test-traceability.md](docs/test-traceability.md) maps each requirement of the brief to the tests that check it. It also lists what no test proves yet, and the tests that I checked by breaking the code.
+
+- **`StockUpdateProcessorTests`:**
+  - a new version is applied;
+  - a replay with a new `eventId` is a duplicate;
+  - the stale case from the brief (v8 then v7);
+  - versions are independent for each part of the key: seller, product, size and country;
+  - unknown, inactive and disabled products;
+  - a transient write failure;
+  - a publish failure that goes to the outbox;
+  - an event and a bulk row racing on the same key. This test fails if the per-key lock is removed.
+- **`StockCsvTests`:** CRLF line endings, any column order, quoted fields, header errors, row errors, and the provided fixture.
+- **`DevMessagesEndpointTests`, `BulkImportEndpointTests` and `EventPublisherTests`** run the real application (`WebApplicationFactory`) with the real resilience pipeline. Only the HTTP dependencies are replaced, by an in-memory copy of the WireMock mappings ([FakeDependencies.cs](tests/AvailabilityProcessor.Tests/Support/FakeDependencies.cs)), and they use the real fixtures. They cover:
+  - the sample event;
+  - every fault input from the mock reference table;
+  - `Retry-After`;
+  - the 10,000-row fixture, which needs one snapshot request and no per-row lookups, and is a no-op when imported again;
+  - a mixed file with partial failures, where the stale row and the duplicate row send nothing downstream;
+  - an upload that gets `202` while every dependency call is held, so before any row is processed;
+  - a file with two countries, which needs one snapshot request per country;
+  - an event that arrives while an import job is writing the same key. The event waits, and the older row never overwrites it;
+  - uploads that cannot be read: a form body that cannot be parsed gets `400`, and a body over the size limit gets `413`. Kestrel enforces that limit, so this one test starts the application on Kestrel, with the limit lowered to 1 KB.
+- **Event sink faults:** they are keyed on the published `eventId` (`fault-429` and `fault-503`). The service derives event IDs from the key and version, so the full flow never produces them; the publisher adapter is tested with those IDs directly.
+
+## What I would do next
+
+- Persist state in a database:
+  - the version per key, written with a conditional update (`WHERE version < @new`);
+  - a transactional outbox;
+  - import jobs and their row results.
+- Have the Availability API enforce `sourceVersion` (reject older writes) as the last line of defence.
+- Add Kafka consumer and producer adapters, with dead-letter and retry topics.
+- Add a circuit breaker, OpenTelemetry metrics and tracing (using `causationId`), and dependency health checks.
+- For uploads: stream them to blob storage, paginate row results, add job retention and authentication, and switch off the `/_dev` routes.

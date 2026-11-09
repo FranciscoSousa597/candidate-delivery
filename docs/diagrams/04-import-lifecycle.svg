@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="580" viewBox="0 0 820 580" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Bulk import lifecycle</title>
+  <desc id="desc">The client posts a CSV. The HTTP request validates it, queues an import job and returns 202 with a jobId before any row is processed. A background worker validates the rows, loads one snapshot per country, processes each row with the same pipeline as single events and finishes the job. Meanwhile the client polls the job status: Running while rows are processed, Completed at the end.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="580" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">Bulk import: the upload returns at once, rows are processed in the background</text>
+
+  <g>
+    <rect x="30" y="60" width="200" height="44" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="130" y="82" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#2C2C2A">Client (curl)</text>
+  </g>
+  <g>
+    <rect x="310" y="60" width="200" height="44" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="410" y="82" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">HTTP request</text>
+  </g>
+  <g>
+    <rect x="590" y="60" width="200" height="44" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="690" y="82" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Background worker</text>
+  </g>
+
+  <g fill="none" stroke="#B4B2A9" stroke-width="1" stroke-dasharray="4 4">
+    <path d="M130 104 V560"/>
+    <path d="M410 104 V164"/>
+    <path d="M410 220 V560"/>
+    <path d="M690 104 V258"/>
+  </g>
+
+  <g>
+    <rect x="310" y="164" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="410" y="184" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Validate and enqueue</text>
+    <text x="410" y="202" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">or reject: 400, 413, 415, 503</text>
+  </g>
+  <g>
+    <rect x="590" y="258" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="690" y="278" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Validate rows</text>
+    <text x="690" y="296" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">invalid rows recorded</text>
+  </g>
+  <g>
+    <rect x="590" y="338" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="690" y="358" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Load snapshots</text>
+    <text x="690" y="376" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">one request per country</text>
+  </g>
+  <g>
+    <rect x="590" y="418" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="690" y="438" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Process each row</text>
+    <text x="690" y="456" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">same pipeline as events</text>
+  </g>
+  <g>
+    <rect x="590" y="498" width="200" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="690" y="518" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3C3489">Finish the job</text>
+    <text x="690" y="536" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">Completed or with errors</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M130 148 H406" marker-end="url(#arrow)"/>
+    <path d="M410 250 H134" marker-end="url(#arrow)"/>
+    <path d="M510 192 H550 V286 H586" marker-end="url(#arrow)"/>
+    <path d="M690 314 V334" marker-end="url(#arrow)"/>
+    <path d="M690 394 V414" marker-end="url(#arrow)"/>
+    <path d="M690 474 V494" marker-end="url(#arrow)"/>
+    <path d="M130 380 H406" marker-end="url(#arrow)"/>
+    <path d="M410 414 H134" marker-end="url(#arrow)"/>
+    <path d="M130 500 H406" marker-end="url(#arrow)"/>
+    <path d="M410 534 H134" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="12" fill="#5F5E5A" text-anchor="middle">
+    <text x="270" y="140">POST /v1/availability/imports (CSV)</text>
+    <text x="270" y="242">202 Accepted + jobId</text>
+    <text x="270" y="372">GET /v1/availability/imports/{jobId}</text>
+    <text x="270" y="406">200: Running, e.g. 4,657 / 10,000</text>
+    <text x="270" y="492">GET again</text>
+    <text x="270" y="526">200: Completed, 10,000 / 10,000</text>
+    <text x="568" y="244" text-anchor="start">queue</text>
+  </g>
+</svg>

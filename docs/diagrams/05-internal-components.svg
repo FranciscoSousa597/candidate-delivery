@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="780" viewBox="0 0 820 780" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Inside the service</title>
+  <desc id="desc">The event endpoint calls the message handler. The import endpoints queue jobs for a background worker that runs the import job runner. Both paths call the stock update processor, which uses in-memory state and three HTTP clients. Each client sits behind a resilience pipeline and calls one dependency: the Product Context API, the Availability API or the event sink.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="780" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">Inside the service: two entry paths share one processor</text>
+  <text x="24" y="56" font-size="13" fill="#5F5E5A">Components in src/AvailabilityProcessor and how they call each other.</text>
+
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="30" y="80" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="150" y="100" font-size="14" font-weight="600" fill="#3C3489">Event endpoint</text>
+    <text x="150" y="118" fill="#534AB7">DevEndpoints</text>
+
+    <rect x="290" y="80" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="410" y="100" font-size="14" font-weight="600" fill="#3C3489">Import endpoints</text>
+    <text x="410" y="118" fill="#534AB7">ImportEndpoints</text>
+
+    <rect x="30" y="170" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="150" y="190" font-size="14" font-weight="600" fill="#3C3489">Message handler</text>
+    <text x="150" y="208" fill="#534AB7">SellerInventoryChangedHandler</text>
+
+    <rect x="290" y="170" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="410" y="190" font-size="14" font-weight="600" fill="#3C3489">Queue and worker</text>
+    <text x="410" y="208" fill="#534AB7">ImportQueue, ImportWorker</text>
+
+    <rect x="290" y="260" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="410" y="280" font-size="14" font-weight="600" fill="#3C3489">Import job runner</text>
+    <text x="410" y="298" fill="#534AB7">ImportJobRunner</text>
+
+    <rect x="30" y="360" width="500" height="72" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="2.5"/>
+    <text x="280" y="386" font-size="14" font-weight="600" fill="#3C3489">Stock update processor</text>
+    <text x="280" y="406" fill="#534AB7">StockUpdateProcessor: lock, versions, context, write, publish</text>
+  </g>
+
+  <rect x="560" y="250" width="240" height="262" rx="12" fill="none" stroke="#888780" stroke-dasharray="6 4"/>
+  <text x="575" y="270" font-size="13" font-weight="600" fill="#2C2C2A" dominant-baseline="central">In-memory state</text>
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="575" y="284" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="680" y="300" font-size="13" font-weight="600" fill="#2C2C2A">Applied versions</text>
+    <text x="680" y="318" fill="#5F5E5A">IStockStateStore</text>
+    <rect x="575" y="340" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="680" y="356" font-size="13" font-weight="600" fill="#2C2C2A">Key locks</text>
+    <text x="680" y="374" fill="#5F5E5A">StockKeyLock, 1024 stripes</text>
+    <rect x="575" y="396" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="680" y="412" font-size="13" font-weight="600" fill="#2C2C2A">Outbox and relay</text>
+    <text x="680" y="430" fill="#5F5E5A">PendingEventOutbox</text>
+    <rect x="575" y="452" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="680" y="468" font-size="13" font-weight="600" fill="#2C2C2A">Import jobs</text>
+    <text x="680" y="486" fill="#5F5E5A">ImportJobStore</text>
+  </g>
+
+  <rect x="20" y="536" width="790" height="100" rx="12" fill="none" stroke="#B4B2A9" stroke-dasharray="6 4"/>
+  <text x="428" y="553" font-size="12" fill="#5F5E5A" dominant-baseline="central">One resilience pipeline per client</text>
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="30" y="568" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="150" y="588" font-size="14" font-weight="600" fill="#3C3489">Product Context client</text>
+    <text x="150" y="606" fill="#534AB7">ProductContextClient</text>
+    <rect x="295" y="568" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="415" y="588" font-size="14" font-weight="600" fill="#3C3489">Availability client</text>
+    <text x="415" y="606" fill="#534AB7">HttpAvailabilityGateway</text>
+    <rect x="560" y="568" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="680" y="588" font-size="14" font-weight="600" fill="#3C3489">Event publisher</text>
+    <text x="680" y="606" fill="#534AB7">HttpEventPublisher</text>
+
+    <rect x="30" y="668" width="240" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="150" y="688" font-size="14" font-weight="600" fill="#085041">Product Context API</text>
+    <text x="150" y="706" fill="#0F6E56">WireMock in this exercise</text>
+    <rect x="295" y="668" width="240" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="415" y="688" font-size="14" font-weight="600" fill="#085041">Availability API</text>
+    <text x="415" y="706" fill="#0F6E56">WireMock in this exercise</text>
+    <rect x="560" y="668" width="240" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="680" y="688" font-size="14" font-weight="600" fill="#085041">Event sink</text>
+    <text x="680" y="706" fill="#0F6E56">stands in for the broker</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M150 136 V166" marker-end="url(#arrow)"/>
+    <path d="M410 136 V166" marker-end="url(#arrow)"/>
+    <path d="M410 226 V256" marker-end="url(#arrow)"/>
+    <path d="M150 226 V356" marker-end="url(#arrow)"/>
+    <path d="M410 316 V356" marker-end="url(#arrow)"/>
+    <path d="M150 432 V564" marker-end="url(#arrow)"/>
+    <path d="M415 432 V564" marker-end="url(#arrow)"/>
+    <path d="M510 432 V524 H680 V564" marker-end="url(#arrow)"/>
+    <path d="M150 624 V664" marker-end="url(#arrow)"/>
+    <path d="M415 624 V664" marker-end="url(#arrow)"/>
+    <path d="M680 624 V664" marker-end="url(#arrow)"/>
+  </g>
+  <g fill="none" stroke="#888780" stroke-width="1.2" stroke-dasharray="4 3">
+    <path d="M530 396 H556" marker-end="url(#arrow)"/>
+    <path d="M530 288 H556" marker-end="url(#arrow)"/>
+    <path d="M530 108 H680 V246" marker-end="url(#arrow)"/>
+  </g>
+
+  <g font-size="12" fill="#5F5E5A">
+    <rect x="30" y="746" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
+    <text x="48" y="752" dominant-baseline="central">Service components</text>
+    <rect x="210" y="746" width="12" height="12" rx="2" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
+    <text x="228" y="752" dominant-baseline="central">In-memory state (dashed arrow = uses)</text>
+    <rect x="470" y="746" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="488" y="752" dominant-baseline="central">External dependencies</text>
+  </g>
+</svg>
