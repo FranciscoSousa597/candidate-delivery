@@ -41,12 +41,14 @@ public sealed record ImportJobView(
 public sealed class ImportJob(Guid id, string? fileName, ParsedCsv input, int maxRowResults, DateTimeOffset createdAt)
 {
     private readonly Lock _gate = new();
-    private readonly List<RowResult> _rowResults = [];
+    // Failed and skipped rows are kept apart, so that skipped rows can never push a failed row out of the status.
+    private readonly List<RowResult> _failedRows = [];
+    private readonly List<RowResult> _skippedRows = [];
     private ParsedCsv? _input = input;
     private int _succeeded;
     private int _skipped;
     private int _failed;
-    private bool _rowResultsTruncated;
+    private bool _rowResultDropped;
     private ImportJobStatus _status = ImportJobStatus.Queued;
     private DateTimeOffset? _startedAt;
     private DateTimeOffset? _completedAt;
@@ -78,6 +80,7 @@ public sealed class ImportJob(Guid id, string? fileName, ParsedCsv input, int ma
 
     internal void Record(int line, ProcessingResult result)
     {
+        List<RowResult> rows;
         switch (result.Status)
         {
             case ProcessingStatus.Applied:
@@ -85,21 +88,23 @@ public sealed class ImportJob(Guid id, string? fileName, ParsedCsv input, int ma
                 return; // applied rows are only counted, which keeps the status response small
             case ProcessingStatus.Skipped:
                 Interlocked.Increment(ref _skipped);
+                rows = _skippedRows;
                 break;
             default:
                 Interlocked.Increment(ref _failed);
+                rows = _failedRows;
                 break;
         }
 
         lock (_gate)
         {
-            if (_rowResults.Count < maxRowResults)
+            if (rows.Count < maxRowResults)
             {
-                _rowResults.Add(new RowResult(line, result.Status, result.Code, result.Message, result.Retryable));
+                rows.Add(new RowResult(line, result.Status, result.Code, result.Message, result.Retryable));
             }
             else
             {
-                _rowResultsTruncated = true;
+                _rowResultDropped = true;
             }
         }
     }
@@ -131,6 +136,12 @@ public sealed class ImportJob(Guid id, string? fileName, ParsedCsv input, int ma
             var skipped = Volatile.Read(ref _skipped);
             var failed = Volatile.Read(ref _failed);
 
+            // Failed rows are listed first, because they are the ones the caller has to act on.
+            // Skipped rows take the space that is left under the limit.
+            var listedSkippedRows = Math.Max(0, maxRowResults - _failedRows.Count);
+            var rowResults = _failedRows.Concat(_skippedRows.Take(listedSkippedRows)).OrderBy(row => row.Line).ToArray();
+            var truncated = _rowResultDropped || _skippedRows.Count > listedSkippedRows;
+
             return new ImportJobView(
                 Id,
                 _status,
@@ -143,8 +154,8 @@ public sealed class ImportJob(Guid id, string? fileName, ParsedCsv input, int ma
                 SucceededRows: succeeded,
                 SkippedRows: skipped,
                 FailedRows: failed,
-                _rowResults.OrderBy(row => row.Line).ToArray(),
-                _rowResultsTruncated,
+                rowResults,
+                truncated,
                 _error);
         }
     }

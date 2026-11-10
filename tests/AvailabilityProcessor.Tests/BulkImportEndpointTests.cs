@@ -199,6 +199,38 @@ public sealed class BulkImportEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Failed_row_is_listed_even_when_skipped_rows_fill_the_row_result_limit()
+    {
+        // The limit is 3 row results, and rows are processed one at a time,
+        // so the five skipped rows are recorded before the failed one.
+        using var app = new TestApp(new Dictionary<string, string?>
+        {
+            ["BulkImport:MaxReportedRowResults"] = "3",
+            ["BulkImport:MaxDegreeOfParallelism"] = "1",
+        });
+        using var client = app.CreateClient();
+        const string header = "sellerId,productId,sizeId,countryCode,availableQuantity,sourceVersion\n";
+        const string rows =
+            "seller-001,style-1,size-34,PT,5,1\n" + // line 2
+            "seller-002,style-2,size-36,PT,5,1\n" + // line 3
+            "seller-003,style-3,size-38,PT,5,1\n" + // line 4
+            "seller-004,style-4,size-40,PT,5,1\n" + // line 5
+            "seller-005,style-5,size-42,PT,5,1\n";  // line 6
+        var first = await WaitForCompletion(await UploadCsv(header + rows, client), client);
+        Assert.Equal((ImportJobStatus.Completed, 5), (first.Status, first.SucceededRows));
+
+        // The same five rows are now duplicates and are skipped. Line 7 is new and fails: its product is inactive.
+        var job = await WaitForCompletion(await UploadCsv(header + rows + "seller-006,style-9999,size-38,PT,1,1\n", client), client);
+
+        Assert.Equal(ImportJobStatus.CompletedWithErrors, job.Status);
+        Assert.Equal((6, 5, 1), (job.TotalRows, job.SkippedRows, job.FailedRows));
+        Assert.Equal(3, job.RowResults.Count);
+        Assert.True(job.RowResultsTruncated);
+        var failed = Assert.Single(job.RowResults, row => row.Outcome == ProcessingStatus.Failed);
+        Assert.Equal((7, OutcomeCodes.ProductInactive), (failed.Line, failed.Code));
+    }
+
+    [Fact]
     public async Task Unknown_job_returns_404()
     {
         var response = await _client.GetAsync($"/v1/availability/imports/{Guid.NewGuid()}");
@@ -319,10 +351,12 @@ public sealed class BulkImportEndpointTests : IDisposable
     private List<JsonNode> PublishedEvents() =>
         _app.Dependencies.Where("POST", "/mock-broker/v1/events").Select(request => JsonNode.Parse(request.Body!)!).ToList();
 
-    private async Task<ImportJobView> GetJob(HttpResponseMessage accepted) =>
-        (await _client.GetFromJsonAsync<ImportJobView>(accepted.Headers.Location!.ToString(), Json))!;
+    // The helpers below use the shared application, unless a test passes the client of its own application.
+    private async Task<ImportJobView> GetJob(HttpResponseMessage accepted, HttpClient? client = null) =>
+        (await (client ?? _client).GetFromJsonAsync<ImportJobView>(accepted.Headers.Location!.ToString(), Json))!;
 
-    private Task<HttpResponseMessage> UploadCsv(string csv) => _client.PostAsync("/v1/availability/imports", CsvForm(csv));
+    private Task<HttpResponseMessage> UploadCsv(string csv, HttpClient? client = null) =>
+        (client ?? _client).PostAsync("/v1/availability/imports", CsvForm(csv));
 
     /// <summary>The CSV as a file in a multipart/form-data body, the only upload format the service accepts.</summary>
     private static MultipartFormDataContent CsvForm(string csv) =>
@@ -337,12 +371,12 @@ public sealed class BulkImportEndpointTests : IDisposable
         return await _client.PostAsync("/v1/availability/imports", form);
     }
 
-    private async Task<ImportJobView> WaitForCompletion(HttpResponseMessage accepted)
+    private async Task<ImportJobView> WaitForCompletion(HttpResponseMessage accepted, HttpClient? client = null)
     {
         var deadline = DateTime.UtcNow.AddSeconds(60);
         while (true)
         {
-            var job = await GetJob(accepted);
+            var job = await GetJob(accepted, client);
             if (job.Status is ImportJobStatus.Completed or ImportJobStatus.CompletedWithErrors or ImportJobStatus.Failed)
             {
                 return job;

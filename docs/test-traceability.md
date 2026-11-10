@@ -7,7 +7,7 @@ This document maps each requirement of the brief to the tests that check it. It 
 
 I wrote the tests after the code, from my own reading of the brief. If that reading is wrong somewhere, the code and its test are wrong together and the test still passes. The tables below make the reading checkable against the brief, one requirement at a time.
 
-The suite has 43 test methods and 65 test cases. `dotnet test` runs them without Docker.
+The suite has 44 test methods and 67 test cases. `dotnet test` runs them without Docker.
 
 ## Summary
 
@@ -61,7 +61,7 @@ The suite has 43 test methods and 65 test cases. `dotnet test` runs them without
 | R4.3 | Malformed requests and missing headers are rejected synchronously. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11, Csv-3 | Covered. Bulk-9 sends form bodies that cannot be parsed, Bulk-10 sends requests that are not multipart, and Bulk-11 sends a body over the request size limit. |
 | R4.4 | The upload returns `202 Accepted` and a `jobId`. | Bulk-1, Bulk-2 | Covered. The tests assert `202`, the `Location` header and `statusUrl`. Bulk-1 also asserts that the body has a `jobId`, that `statusUrl` points to that id, and that the status endpoint returns the same id. |
 | R4.5 | The upload does not wait for all rows to finish. | Bulk-6 | Covered. The test holds every call to the dependencies. The upload still answers `202`, and the job status shows 10,000 rows, none of them processed, and no write. |
-| R4.6 | The status endpoint returns the job state, the total, processed, succeeded and failed row counts, and row-level errors. | Bulk-1, Bulk-2, Bulk-6 | Covered. Bulk-6 reads the status while the job is still `Queued` or `Running`. |
+| R4.6 | The status endpoint returns the job state, the total, processed, succeeded and failed row counts, and row-level errors. | Bulk-1, Bulk-2, Bulk-6, Bulk-13 | Covered. Bulk-6 reads the status while the job is still `Queued` or `Running`. Bulk-13 checks that a failed row is listed even when skipped rows fill the list. |
 | R4.7 | Partial failures are reported. | Bulk-2 | Covered. The format is decision D5. |
 | R4.8 | The service fetches one snapshot per distinct country in the file, and makes no single-item request per row. | Bulk-1, Bulk-2, Bulk-7 | Covered. Bulk-1 and Bulk-2 assert one snapshot request and no per-row lookup for a file with one country. Bulk-7 uploads rows for `PT` and `ES` and asserts one snapshot request per country. The mock has no snapshot for `ES`, so those rows fail with `ProductContextNotFound`. |
 | R4.9 | The snapshot order is unspecified, so rows are matched by key. | Bulk-1 | Covered. The provided file and the provided snapshot are in different orders, and all 10,000 rows find their context among 50,000. |
@@ -98,12 +98,12 @@ The brief leaves these points open, or asks the candidate to decide and document
 | D2 | Validation rules: the quantity is 0 or more, the version is 0 or more, `eventType` must be `SellerInventoryChanged`, a lower-case country code is accepted and upper-cased. Every error is reported, not only the first. | The event must be validated, and the country code has two letters. | Dev-4, Csv-1, Csv-4 |
 | D3 | Unknown, inactive and country-disabled products are permanent failures: no write, no event, not retryable. | "Decide and document". | Dev-6, Proc-5, Bulk-2, Bulk-7 |
 | D4 | Duplicate and stale updates are `Skipped`, not failed. In a job they count in `skippedRows`, and the job still ends as `Completed`. | "Document whether stale rows are reported as skipped or failed". | Dev-2, Dev-3, Proc-2, Proc-3, Bulk-1, Bulk-2 |
-| D5 | Partial failures: the job ends as `CompletedWithErrors`. `rowResults` gives the line, outcome, code and retryable flag of each row that was not applied. The list is capped at 1,000 entries and `rowResultsTruncated` signals the cap. The counts are always exact. | "Define and document how partial failures are reported". | Bulk-1, Bulk-2, Bulk-7 |
+| D5 | Partial failures: the job ends as `CompletedWithErrors`. `rowResults` gives the line, outcome, code and retryable flag of each row that was not applied. The list is capped at 1,000 entries and `rowResultsTruncated` signals the cap. Failed rows are listed first, and skipped rows take the space that is left. The counts are always exact. | "Define and document how partial failures are reported". | Bulk-1, Bulk-2, Bulk-7, Bulk-13 |
 | D6 | The version is recorded after a successful write and before publishing. The version and the output event are stored in one transaction. A failed publish leaves the update applied, and the event waits in the outbox for the relay. | The case must be described. | Dev-9, Dev-12, Proc-6, Proc-7, Store-1 |
 | D7 | The output `eventId` is deterministic per stock key and version. `causationId` carries the inbound `eventId`. | Nothing. | Dev-1, Dev-9, Proc-9 |
 | D8 | Retry policy: only transient failures are retried, `Retry-After` is honoured, and the number of attempts is bounded. | Retry behaviour must be described. | Dev-7, Dev-8, Pub-1 |
 | D9 | Uploads are accepted as `multipart/form-data`, with the CSV in a field named `file`. A missing file, a form body that cannot be parsed or a bad header gets `400`. A body over the request size limit gets `413`. A request that is not multipart gets `415`. | Malformed requests are rejected synchronously. The format and the status codes are not given. | Bulk-3, Bulk-4, Bulk-9, Bulk-10, Bulk-11 |
-| D10 | CSV parsing: columns are matched by header name in any order, CRLF and blank lines are accepted, quoted fields follow RFC 4180, and a repeated column name rejects the file. The CsvHelper library does the parsing. A row with broken quoting fails on its own. | The column names only. | Csv-1, Csv-3, Csv-4, Csv-5 |
+| D10 | CSV parsing: columns are matched by header name in any order, CRLF and blank lines are accepted, quoted fields follow RFC 4180, and a repeated column name rejects the file. So does a file without a header row, with a message that names the missing columns. The CsvHelper library does the parsing. A row with broken quoting fails on its own. | The column names only. | Csv-1, Csv-3, Csv-4, Csv-5 |
 | D11 | An invalid row fails on its own and keeps its line number. It does not reject the file. | The status must include row-level errors. | Csv-4, Bulk-2 |
 | D12 | An unknown job id gets `404`. | Nothing. | Bulk-5 |
 | D13 | Two helper routes exist for inspection: `GET /_dev/stock/...` and `GET /_dev/outbox`. | Nothing. | Used by Dev-3, Dev-7, Dev-9, Dev-12, Bulk-2 and Bulk-8 |
@@ -145,6 +145,7 @@ The first version of this document listed six more gaps, each tied to a requirem
 - Only the HTTP calls to the dependencies are replaced. `FakeDependencies` is an in-memory copy of the 12 WireMock mappings that the service calls.
 - The tests read the provided fixtures from `wiremock/__files`: `sample-event.json`, `bulk-stock.csv` and `product-contexts-PT.json`.
 - Bulk-6 and Bulk-8 hold a dependency call on purpose, through the `BeforeRespond` hook of the fake. This lets a test observe the service while that call is in flight.
+- Bulk-13 starts its own application with a limit of 3 row results and one row at a time, so that the order in which the rows are recorded is fixed.
 - Bulk-11 is the only test that runs on Kestrel instead of the in-memory test server. Kestrel is what enforces the request size limit, so the test starts it on a free port with the limit lowered to 1 KB.
 - Each application has its own SQLite database, in memory. Dev-11 and Dev-12 use a database file instead, shared by two instances of the application, one after the other, to reproduce a restart.
 - **Processor tests** (`Proc`) use hand-written fakes for the gateway, the publisher and the context source, and a SQLite database in memory. They test the rules, not HTTP.
@@ -246,7 +247,7 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Proc-8 | `Event_arriving_while_a_bulk_row_for_the_same_key_is_in_flight_is_never_overwritten_by_the_older_row` | 1 | R5.4, R5.15 | None |
 | Proc-9 | `Output_eventId_is_deterministic_per_stock_key_and_version` | 1 | R5.13 | D7 |
 
-### `BulkImportEndpointTests` (Bulk): 12 methods, 16 cases
+### `BulkImportEndpointTests` (Bulk): 13 methods, 17 cases
 
 | ID | Test | Cases | Requirements | Decisions |
 |---|---|---|---|---|
@@ -262,14 +263,15 @@ All tests are in `tests/AvailabilityProcessor.Tests`. "Cases" is the number of t
 | Bulk-10 | `Upload_that_is_not_multipart_is_rejected_with_415` | 3 | R4.3 | D9 |
 | Bulk-11 | `Upload_larger_than_the_request_size_limit_is_rejected_with_413` | 1 | R4.3 | D9 |
 | Bulk-12 | `Import_against_a_failing_dependency_stops_calling_it_and_reports_the_rows_as_retryable` | 1 | R5.15 | D14 |
+| Bulk-13 | `Failed_row_is_listed_even_when_skipped_rows_fill_the_row_result_limit` | 1 | R4.6 | D5 |
 
-### `StockCsvTests` (Csv): 5 methods, 12 cases
+### `StockCsvTests` (Csv): 5 methods, 13 cases
 
 | ID | Test | Cases | Requirements | Decisions |
 |---|---|---|---|---|
 | Csv-1 | `Parses_crlf_files_and_maps_columns_by_header_name` | 1 | R4.2 | D2, D10 |
 | Csv-2 | `Provided_fixture_parses_into_10000_valid_rows` | 1 | R4.2 | None |
-| Csv-3 | `Unusable_header_rejects_the_whole_upload` | 3 | R4.3 | D10 |
+| Csv-3 | `Unusable_header_rejects_the_whole_upload` | 4 | R4.3 | D10 |
 | Csv-4 | `Invalid_row_becomes_a_row_level_error` | 6 | R3.3 | D2, D10, D11 |
 | Csv-5 | `Quoted_fields_may_contain_commas_quotes_and_line_breaks` | 1 | None | D10 |
 

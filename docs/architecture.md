@@ -142,7 +142,7 @@ The design decisions behind them are described in [README.md](../README.md).
   - `Completed` when no row failed;
   - `CompletedWithErrors` when at least one row failed;
   - `Failed` when the job itself stops, for example on shutdown.
-- The job status lists at most 1,000 rows that were not applied; the counts are always exact.
+- The job status lists at most 1,000 rows that were not applied, failed rows first; the counts are always exact.
 - The job itself is kept in memory; the versions and the events it produced are in the database.
 
 ## 11. Proposed production messaging

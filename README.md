@@ -34,7 +34,7 @@ For each change, the service does five things:
 | `compose.yaml` and `wiremock/` | WireMock mocks of the three dependencies, and the sample files | Provided |
 | `README.md` | This file: how to run the solution, the API, the design decisions and the trade-offs | Solution |
 | `src/AvailabilityProcessor` | The service | Solution |
-| `tests/AvailabilityProcessor.Tests` | 65 automated tests | Solution |
+| `tests/AvailabilityProcessor.Tests` | 67 automated tests | Solution |
 | [docs/architecture.md](docs/architecture.md) | 11 diagrams, from the systems around the service to each request, step by step | Solution |
 | [docs/test-traceability.md](docs/test-traceability.md) | Each requirement of the brief, and the tests that check it | Solution |
 
@@ -229,7 +229,7 @@ Delivery is at-least-once. If the service crashes after the sink accepted an eve
   - **Succeeded:** written. The event was published, or it is waiting in the outbox for the relay.
   - **Skipped:** stale and duplicate rows. These are not errors: the stock already holds an equal or newer version, and a stale row never causes a write or an event.
   - **Failed:** invalid row, unknown, inactive or disabled product, or a dependency failure after retries. `retryable` says whether submitting the row again can help.
-- **`rowResults`** lists every row that was not applied. Each entry has the line number in the file (the header is line 1), the outcome, a code, a message and `retryable`. The list is capped at 1,000 entries (`rowResultsTruncated` says when the cap was hit), but the counts are always exact.
+- **`rowResults`** lists every row that was not applied. Each entry has the line number in the file (the header is line 1), the outcome, a code, a message and `retryable`. The list is capped at 1,000 entries (`rowResultsTruncated` says when the cap was hit), but the counts are always exact. Failed rows are listed first, and skipped rows take the space that is left, so skipped rows never hide a failed one.
 - **Job `status`:**
   - `Completed`: no failed rows.
   - `CompletedWithErrors`: partial failure.
@@ -357,7 +357,7 @@ As both collections grow, time grows linearly in each, and memory follows the up
 
 ## Tests
 
-`dotnet test` runs 65 tests in a few seconds, without Docker.
+`dotnet test` runs 67 tests in a few seconds, without Docker.
 
 [docs/test-traceability.md](docs/test-traceability.md) maps each requirement of the brief to the tests that check it. It also lists what no test proves yet, and the tests that I checked by breaking the code.
 
@@ -371,13 +371,14 @@ As both collections grow, time grows linearly in each, and memory follows the up
   - a publish failure, after which the event waits in the outbox and the relay publishes it;
   - an event and a bulk row racing on the same key. This test fails if the per-key lock is removed.
 - **`SqliteStockStoreTests`:** the SQL of the store, against a SQLite database in memory. A version and its event are stored together, the event leaves the outbox once published, and a version that is not higher never replaces the stored one.
-- **`StockCsvTests`:** CRLF line endings, any column order, quoted fields, header errors, row errors (a row with broken quoting among them), and the provided fixture.
+- **`StockCsvTests`:** CRLF line endings, any column order, quoted fields, header errors (a file without a header row among them), row errors (a row with broken quoting among them), and the provided fixture.
 - **`DevMessagesEndpointTests`, `BulkImportEndpointTests` and `EventPublisherTests`** run the real application (`WebApplicationFactory`) with the real resilience pipeline. Only the HTTP dependencies are replaced, by an in-memory copy of the WireMock mappings ([FakeDependencies.cs](tests/AvailabilityProcessor.Tests/Support/FakeDependencies.cs)), and they use the real fixtures. Each application gets its own SQLite database, in memory. They cover:
   - the sample event;
   - every fault input from the mock reference table;
   - `Retry-After`;
   - the 10,000-row fixture, which needs one snapshot request and no per-row lookups, and is a no-op when imported again;
   - a mixed file with partial failures, where the stale row and the duplicate row send nothing downstream;
+  - a file with more skipped rows than the row-result limit and one failed row, where the failed row is still listed;
   - an upload that gets `202` while every dependency call is held, so before any row is processed;
   - a file with two countries, which needs one snapshot request per country;
   - an event that arrives while an import job is writing the same key. The event waits, and the older row never overwrites it;

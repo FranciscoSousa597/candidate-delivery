@@ -53,20 +53,28 @@ public static class StockCsv
         }
 
         var positions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        string? repeatedColumn = null;
         for (var i = 0; i < header.Count; i++)
         {
             var name = header[i].TrimStart('﻿').Trim();
             if (name.Length > 0 && !positions.TryAdd(name, i))
             {
-                throw new InvalidCsvException($"Column '{name}' appears more than once in the header.");
+                repeatedColumn ??= name;
             }
         }
 
+        // Missing columns are reported first. A file without a header row then gets a message that says what is
+        // expected, and not a complaint about a value that its first data row happens to repeat.
         var missing = RequiredColumns.Where(column => !positions.ContainsKey(column)).ToList();
         if (missing.Count > 0)
         {
             throw new InvalidCsvException(
                 $"Missing required column(s): {string.Join(", ", missing)}. Expected the header: {string.Join(',', RequiredColumns)}");
+        }
+
+        if (repeatedColumn is not null)
+        {
+            throw new InvalidCsvException($"Column '{repeatedColumn}' appears more than once in the header.");
         }
 
         var rows = new List<CsvRecord>();

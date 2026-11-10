@@ -38,6 +38,7 @@ public sealed class StockCsvTests
     [InlineData("", "empty")]
     [InlineData("sellerId,productId,sizeId,countryCode,availableQuantity\nseller-1,style-1,size-34,PT,1", "sourceVersion")]
     [InlineData("sellerId,sellerId,productId,sizeId,countryCode,availableQuantity,sourceVersion\n", "more than once")]
+    [InlineData("seller-1,style-1,size-34,PT,1,1\nseller-2,style-2,size-36,PT,1,1", "Missing required column")] // no header row
     public void Unusable_header_rejects_the_whole_upload(string csv, string expectedMessagePart)
     {
         var ex = Assert.Throws<InvalidCsvException>(() => StockCsv.Parse(new StringReader(csv)));
