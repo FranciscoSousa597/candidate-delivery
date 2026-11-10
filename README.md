@@ -12,7 +12,7 @@ A stock change arrives in one of two ways. Both go through the same processing c
 
 | Input | Endpoint | Response |
 |---|---|---|
-| One inventory event, as JSON | `POST /_dev/messages` | After the event is processed: `200`, `400`, `422` or `503` |
+| One inventory event, as JSON | `POST /_dev/messages` | After the event is processed: `200`, `400`, `422` or `503`. A body that is not JSON gets `415` |
 | A stock file, as CSV (10,000 rows in the sample) | `POST /v1/availability/imports` | At once: `202` and a `jobId`. The rows are processed in the background, and `GET /v1/availability/imports/{jobId}` returns the progress |
 
 For each change, the service does five things:
@@ -117,13 +117,13 @@ dotnet test
 
 | Route | Purpose | Responses |
 |---|---|---|
-| `POST /_dev/messages` | Test-only ingress for a `SellerInventoryChanged` event. Calls the same handler a broker consumer would. | `200` applied or skipped, `400` invalid message, `422` permanent failure, `503` transient failure |
+| `POST /_dev/messages` | Test-only ingress for a `SellerInventoryChanged` event. Calls the same handler a broker consumer would. | `200` applied or skipped, `400` invalid message, `415` body that is not JSON, `422` permanent failure, `503` transient failure |
 | `POST /v1/availability/imports` | CSV upload as `multipart/form-data`, in a field named `file` | `202` with `jobId` and `Location`, `400` no file, unreadable form body or bad header, `413` upload over the size limit, `415` wrong media type, `503` import queue full |
 | `GET /v1/availability/imports/{jobId}` | Job status, counts and row-level results | `200`, `404` |
 | `GET /_dev/stock/{sellerId}/{productId}/{sizeId}?countryCode=PT` | Latest applied version and quantity of a stock key | `200`, `404` |
 | `GET /_dev/outbox` | Events that are waiting in the outbox to be published | `200` |
 
-The status codes of `POST /_dev/messages` mirror what a broker consumer would do with the message: `200` ack, `400` dead-letter (poison message), `422` dead-letter or park, `503` do not ack, so it is redelivered later.
+The status codes of `POST /_dev/messages` mirror what a broker consumer would do with the message: `200` ack, `400` dead-letter (poison message), `422` dead-letter or park, `503` do not ack, so it is redelivered later. `415` belongs to this HTTP route only: it answers a request whose body is not JSON.
 
 ```json
 {"status":"Applied","code":"Applied","message":"Availability updated and SizeAvailabilityUpdated published.","retryable":false,"outputEventId":"8d2370cd-f891-e548-ea00-f91e99597d1e","eventPublished":true}

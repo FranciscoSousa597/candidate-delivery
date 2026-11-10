@@ -206,7 +206,7 @@ Notes on these runs:
   - the sample event and its replay;
   - the 10,000-row file, which produced 1 snapshot request, 10,000 PUT and 10,000 POST calls;
   - a second import of the same file, which skipped all 10,000 rows;
-  - each fault input in the table of section 4.2;
+  - the fault inputs of section 4.2 that can be sent through the service: the ones of the Product Context API and of the Availability API. The two event-sink inputs cannot be produced through the service, because it derives the output `eventId` from the stock key and the version. For the sink, I added a temporary WireMock mapping that makes it fail, and removed it afterwards;
   - a mixed file with partial failures.
 - The changes in section 4.4 target the six closed gaps. I did not check in this way the tests that failed under none of them, for example the tests for validation, retries and CSV parsing.
 - Proc-8 and Bulk-8 decide that the newer update is waiting when it has not finished after a short pause: 100 ms in Proc-8 and 200 ms in Bulk-8. On a very slow machine, they could pass although the lock is missing. The pause cannot make them fail when the lock works.
