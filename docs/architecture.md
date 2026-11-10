@@ -8,7 +8,7 @@ The diagrams are in three folders under `docs/diagrams`, one for each type of di
 | `structure` | What the service is made of: its endpoints, its components, its calls to dependencies and its background work | 3 to 6 |
 | `flows` | What happens to a request, step by step: one event and one CSV import | 7 to 10 |
 
-The design decisions behind them are described in [SOLUTION.md](../SOLUTION.md).
+The design decisions behind them are described in [README.md](../README.md).
 
 ## 1. Production context
 
@@ -57,7 +57,7 @@ The design decisions behind them are described in [SOLUTION.md](../SOLUTION.md).
 - The processor keeps the applied versions and the outbox in a SQLite database (`SqliteStockStore`), and the key locks in memory. It reaches the outside world through three HTTP clients, each behind its own resilience pipeline.
 - `ImportJobRunner` also calls the Product Context client itself, to load one snapshot per country.
 - `OutboxRelayService` is the second background service. It reads the outbox and publishes the waiting events through the event publisher (diagram 6).
-- The database survives a restart. The key locks and the import jobs are in memory and do not. In production the database would be a server shared by all instances (see SOLUTION.md).
+- The database survives a restart. The key locks and the import jobs are in memory and do not. In production the database would be a server shared by all instances (see README.md).
 
 ## 5. Calls to dependencies
 

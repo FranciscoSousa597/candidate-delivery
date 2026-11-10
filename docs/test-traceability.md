@@ -33,7 +33,7 @@ The suite has 43 test methods and 65 test cases. `dotnet test` runs them without
   - *Covered*: a test asserts the behaviour.
   - *Partly*: a test asserts it, but not for every case the requirement names. The missing part is a gap in [section 3](#3-gaps).
   - *Not covered*: no test asserts it.
-  - *Documented*: the brief asks for an explanation or a design property. See [SOLUTION.md](../SOLUTION.md).
+  - *Documented*: the brief asks for an explanation or a design property. See [README.md](../README.md).
 
 ## 1. What the brief requires
 
@@ -84,8 +84,8 @@ The suite has 43 test methods and 65 test cases. `dotnet test` runs them without
 | R5.10 | The context lookup can return `503`. | Dev-7 | Covered. |
 | R5.11 | The Availability API can fail transiently. | Dev-7, Proc-6, Bulk-2 | Covered. |
 | R5.12 | The event sink can fail transiently. | Pub-1, Dev-9, Proc-7 | Covered. |
-| R5.13 | Retry and idempotency behaviour is described. | Dev-7, Dev-8, Proc-2, Proc-6, Proc-9 | Covered, and described in SOLUTION.md. |
-| R5.14 | The case where the write succeeds and publishing fails is described. | Dev-9, Dev-12, Proc-7 | Covered, and described in SOLUTION.md. Dev-12 checks that the waiting event survives a restart. |
+| R5.13 | Retry and idempotency behaviour is described. | Dev-7, Dev-8, Proc-2, Proc-6, Proc-9 | Covered, and described in README.md. |
+| R5.14 | The case where the write succeeds and publishing fails is described. | Dev-9, Dev-12, Proc-7 | Covered, and described in README.md. Dev-12 checks that the waiting event survives a restart. |
 | R5.15 | Concurrency and flow control are described. The brief states that no load test is required. | Proc-8, Bulk-8, Dev-10, Bulk-12 | Partly (G8). The per-key lock and the circuit breaker are tested. The import queue limit, the row parallelism and the per-dependency limiter are only described. |
 
 ## 2. Decisions the brief leaves open
@@ -151,7 +151,7 @@ The first version of this document listed six more gaps, each tied to a requirem
 - **Store tests** (`Store`) call `SqliteStockStore` directly, with a database in memory.
 - **CSV tests** (`Csv`) call the parser directly.
 
-### 4.2 Fault inputs from the mock reference in the README
+### 4.2 Fault inputs from the mock reference in EXERCISE-README.md
 
 | Input | Mock behaviour | Tests |
 |---|---|---|
