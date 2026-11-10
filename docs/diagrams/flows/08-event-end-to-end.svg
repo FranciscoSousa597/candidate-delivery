@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="800" viewBox="0 0 820 800" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">One inventory event, from arrival to published event</title>
+  <desc id="desc">An inventory event arrives at POST /_dev/messages and is validated; an invalid message gets 400. Steps 2 to 6 run under the lock of the stock key, which is the seller, product, size and country, so only one update per key runs at a time. Step 2 compares the version with the applied version of the key; the same or an older version is skipped with 200. Step 3 gets the product context; a product that cannot be sold gets 422 and a failing API gets 503. Step 4 writes availability; a write that keeps failing gets 503, a write that the API refuses gets 422, and in both cases nothing is recorded. Step 5 records the version and the output event in one SQLite transaction, so the event is in the outbox. Step 6 publishes the event to the event sink. If the sink accepts it, the event leaves the outbox and the caller gets 200 Applied, event published. If the sink keeps failing, the event stays in the outbox and the caller gets 200 Applied, not published yet. The outbox relay runs every 10 seconds, takes the same key lock, publishes the waiting events to the event sink and removes them from the outbox.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="800" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">One inventory event, from arrival to published event</text>
+  <text x="24" y="56" font-size="13" fill="#5F5E5A">POST /_dev/messages. The key lock, the database transaction and the outbox keep versions and events consistent.</text>
+
+  <rect x="24" y="218" width="292" height="404" rx="12" fill="none" stroke="#534AB7" stroke-width="1.3" stroke-dasharray="6 4"/>
+  <text x="36" y="234" font-size="12" font-weight="600" fill="#3C3489" dominant-baseline="central">key lock</text>
+
+  <g font-size="12" dominant-baseline="central">
+    <text x="600" y="262" font-size="13" font-weight="600" fill="#3C3489">Lock of the stock key</text>
+    <text x="600" y="282" fill="#534AB7">key: seller, product, size, country</text>
+    <text x="600" y="300" fill="#534AB7">held from step 2 to step 6, so only</text>
+    <text x="600" y="318" fill="#534AB7">one update per key runs at a time</text>
+  </g>
+
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="40" y="76" width="260" height="52" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="170" y="94" font-size="14" font-weight="600" fill="#2C2C2A">Inventory event arrives</text>
+    <text x="170" y="112" fill="#5F5E5A">POST /_dev/messages</text>
+
+    <rect x="40" y="148" width="260" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="166" font-size="14" font-weight="600" fill="#3C3489">1. Validate the message</text>
+    <text x="170" y="184" fill="#534AB7">every field, every error reported</text>
+
+    <rect x="40" y="250" width="260" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="268" font-size="14" font-weight="600" fill="#3C3489">2. Compare versions</text>
+    <text x="170" y="286" fill="#534AB7">with this key's version in SQLite</text>
+
+    <rect x="40" y="326" width="260" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="344" font-size="14" font-weight="600" fill="#3C3489">3. Get product context</text>
+    <text x="170" y="362" fill="#534AB7">GET to the Product Context API</text>
+
+    <rect x="40" y="402" width="260" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="420" font-size="14" font-weight="600" fill="#3C3489">4. Write availability</text>
+    <text x="170" y="438" fill="#534AB7">PUT to the Availability API</text>
+
+    <rect x="40" y="478" width="260" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="496" font-size="14" font-weight="600" fill="#3C3489">5. Record version and event</text>
+    <text x="170" y="514" fill="#534AB7">one database transaction</text>
+
+    <rect x="40" y="554" width="260" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="572" font-size="14" font-weight="600" fill="#3C3489">6. Publish the event</text>
+    <text x="170" y="590" fill="#534AB7">POST to the event sink</text>
+
+    <rect x="330" y="148" width="250" height="52" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="455" y="166" font-size="14" font-weight="600" fill="#712B13">400 Invalid message</text>
+    <text x="455" y="184" fill="#993C1D">nothing else happens</text>
+
+    <rect x="330" y="250" width="250" height="52" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="455" y="268" font-size="14" font-weight="600" fill="#2C2C2A">200 Skipped</text>
+    <text x="455" y="286" fill="#5F5E5A">same or older version: no calls</text>
+
+    <rect x="330" y="326" width="250" height="52" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="455" y="344" font-size="14" font-weight="600" fill="#712B13">Failed: 422 or 503</text>
+    <text x="455" y="362" fill="#993C1D">cannot be sold, or the API is failing</text>
+
+    <rect x="330" y="402" width="250" height="52" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="455" y="420" font-size="14" font-weight="600" fill="#712B13">Failed: 503 or 422</text>
+    <text x="455" y="438" fill="#993C1D">API failing or write refused: no record</text>
+
+    <rect x="600" y="478" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#888780" stroke-width="1.5"/>
+    <text x="700" y="496" font-size="14" font-weight="600" fill="#2C2C2A">SQLite database</text>
+    <text x="700" y="514" fill="#5F5E5A">version + event in the outbox</text>
+
+    <rect x="600" y="554" width="200" height="52" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="700" y="572" font-size="14" font-weight="600" fill="#085041">Event sink</text>
+    <text x="700" y="590" fill="#0F6E56">gets SizeAvailabilityUpdated</text>
+
+    <rect x="40" y="676" width="260" height="52" rx="8" fill="#EAF3DE" stroke="#3B6D11"/>
+    <text x="170" y="694" font-size="14" font-weight="600" fill="#27500A">200 Applied, event published</text>
+    <text x="170" y="712" fill="#3B6D11">the event has left the outbox</text>
+
+    <rect x="330" y="676" width="250" height="52" rx="8" fill="#FAEEDA" stroke="#854F0B"/>
+    <text x="455" y="694" font-size="14" font-weight="600" fill="#633806">200 Applied, not published yet</text>
+    <text x="455" y="712" fill="#854F0B">the event stays in the outbox</text>
+
+    <rect x="600" y="676" width="200" height="68" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="700" y="694" font-size="14" font-weight="600" fill="#3C3489">Outbox relay</text>
+    <text x="700" y="712" fill="#534AB7">every 10 s: takes the key lock,</text>
+    <text x="700" y="728" fill="#534AB7">publishes and removes the event</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M170 128 V144" marker-end="url(#arrow)"/>
+    <path d="M170 200 V246" marker-end="url(#arrow)"/>
+    <path d="M170 302 V322" marker-end="url(#arrow)"/>
+    <path d="M170 378 V398" marker-end="url(#arrow)"/>
+    <path d="M170 454 V474" marker-end="url(#arrow)"/>
+    <path d="M170 530 V550" marker-end="url(#arrow)"/>
+    <path d="M300 174 H326" marker-end="url(#arrow)"/>
+    <path d="M300 276 H326" marker-end="url(#arrow)"/>
+    <path d="M300 352 H326" marker-end="url(#arrow)"/>
+    <path d="M300 428 H326" marker-end="url(#arrow)"/>
+    <path d="M300 504 H596" marker-end="url(#arrow)"/>
+    <path d="M300 580 H596" marker-end="url(#arrow)"/>
+    <path d="M130 606 V672" marker-end="url(#arrow)"/>
+    <path d="M220 606 V646 H455 V672" marker-end="url(#arrow)"/>
+    <path d="M580 702 H596" marker-end="url(#arrow)"/>
+    <path d="M700 672 V610" marker-end="url(#arrow)"/>
+  </g>
+  <g fill="none" stroke="#888780" stroke-width="1.2" stroke-dasharray="4 3">
+    <path d="M800 504 H812 V710 H804" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="12" fill="#5F5E5A" dominant-baseline="central">
+    <text x="138" y="660">sink accepted it</text>
+    <text x="236" y="634">sink still failing after its retries</text>
+    <text x="708" y="642">publishes</text>
+  </g>
+
+  <g font-size="12" fill="#5F5E5A">
+    <rect x="24" y="766" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
+    <text x="42" y="772" dominant-baseline="central">Service step</text>
+    <rect x="140" y="766" width="12" height="12" rx="2" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="158" y="772" dominant-baseline="central">Ends here, not applied</text>
+    <rect x="310" y="766" width="12" height="12" rx="2" fill="#FAEEDA" stroke="#854F0B"/>
+    <text x="328" y="772" dominant-baseline="central">Applied, event waiting</text>
+    <rect x="478" y="766" width="12" height="12" rx="2" fill="#FFFFFF" stroke="#888780" stroke-width="1.5"/>
+    <text x="496" y="772" dominant-baseline="central">Database</text>
+    <rect x="570" y="766" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="588" y="772" dominant-baseline="central">Dependency</text>
+    <text x="676" y="772" dominant-baseline="central">Dashed arrow: reads</text>
+  </g>
+</svg>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="820" height="780" viewBox="0 0 820 780" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
   <title id="title">Inside the service</title>
-  <desc id="desc">The event endpoint calls the message handler. The import endpoints queue jobs for a background worker that runs the import job runner. Both paths call the stock update processor, which uses a SQLite database for the applied versions and the outbox, in-memory key locks and three HTTP clients. Each client sits behind a resilience pipeline and calls one dependency: the Product Context API, the Availability API or the event sink.</desc>
+  <desc id="desc">The event endpoint calls the message handler. The import endpoints queue jobs for a background worker that runs the import job runner. Both paths call the stock update processor, which uses a SQLite database for the applied versions and the outbox, in-memory key locks and three HTTP clients. The import job runner also calls the Product Context client itself, to load the snapshots. The outbox relay, a second background service, reads the outbox and calls the event publisher. Each client sits behind a resilience pipeline and calls one dependency: the Product Context API, the Availability API or the event sink.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
@@ -19,6 +19,10 @@
     <rect x="290" y="80" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
     <text x="410" y="100" font-size="14" font-weight="600" fill="#3C3489">Import endpoints</text>
     <text x="410" y="118" fill="#534AB7">ImportEndpoints</text>
+
+    <rect x="560" y="80" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="680" y="100" font-size="14" font-weight="600" fill="#3C3489">Outbox relay</text>
+    <text x="680" y="118" fill="#534AB7">OutboxRelayService, every 10 s</text>
 
     <rect x="30" y="170" width="240" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
     <text x="150" y="190" font-size="14" font-weight="600" fill="#3C3489">Message handler</text>
@@ -47,7 +51,7 @@
     <text x="680" y="356" font-size="13" font-weight="600" fill="#2C2C2A">Key locks</text>
     <text x="680" y="374" fill="#5F5E5A">StockKeyLock, one lock per key</text>
     <rect x="575" y="396" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-width="1.5"/>
-    <text x="680" y="412" font-size="13" font-weight="600" fill="#2C2C2A">Outbox and relay</text>
+    <text x="680" y="412" font-size="13" font-weight="600" fill="#2C2C2A">Outbox</text>
     <text x="680" y="430" fill="#5F5E5A">IEventOutbox, in SQLite</text>
     <rect x="575" y="452" width="210" height="48" rx="8" fill="#FFFFFF" stroke="#888780" stroke-dasharray="3 2"/>
     <text x="680" y="468" font-size="13" font-weight="600" fill="#2C2C2A">Import jobs</text>
@@ -90,11 +94,17 @@
     <path d="M150 624 V664" marker-end="url(#arrow)"/>
     <path d="M415 624 V664" marker-end="url(#arrow)"/>
     <path d="M680 624 V664" marker-end="url(#arrow)"/>
+    <path d="M290 288 H12 V596 H26" marker-end="url(#arrow)"/>
+    <path d="M800 108 H814 V596 H804" marker-end="url(#arrow)"/>
   </g>
   <g fill="none" stroke="#888780" stroke-width="1.2" stroke-dasharray="4 3">
     <path d="M530 396 H556" marker-end="url(#arrow)"/>
     <path d="M530 288 H556" marker-end="url(#arrow)"/>
-    <path d="M530 108 H680 V246" marker-end="url(#arrow)"/>
+    <path d="M530 198 H640 V246" marker-end="url(#arrow)"/>
+    <path d="M720 136 V246" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="12" fill="#5F5E5A" dominant-baseline="central">
+    <text x="36" y="276">loads the snapshots</text>
   </g>
 
   <g font-size="12" fill="#5F5E5A">
@@ -104,5 +114,6 @@
     <text x="228" y="752" dominant-baseline="central">State: dashed = memory, solid = SQLite</text>
     <rect x="470" y="746" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
     <text x="488" y="752" dominant-baseline="central">External dependencies</text>
+    <text x="640" y="752" dominant-baseline="central">Dashed arrow: uses state</text>
   </g>
 </svg>

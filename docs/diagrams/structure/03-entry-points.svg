@@ -75,7 +75,7 @@
     <rect x="20" y="338" width="12" height="12" rx="2" fill="#F1EFE8" stroke="#888780"/>
     <text x="38" y="344" dominant-baseline="central">What callers send</text>
     <rect x="190" y="338" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
-    <text x="208" y="344" dominant-baseline="central">Public endpoints</text>
+    <text x="208" y="344" dominant-baseline="central">Endpoints</text>
     <rect x="350" y="338" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
     <text x="368" y="344" dominant-baseline="central">Inside the service</text>
   </g>

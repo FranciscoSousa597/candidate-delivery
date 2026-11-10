@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="812" viewBox="0 0 820 812" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">One CSV import, from upload to the last event</title>
+  <desc id="desc">A CSV upload arrives at POST /v1/availability/imports. Step 1 checks the request and the header; a request that is not multipart, cannot be read, is too large or has a bad header is rejected at once with 415, 400 or 413 and no job is created. Step 2 creates the job and puts it in an in-memory queue of at most 10 jobs; a full queue gets 503. The HTTP request ends there with 202 Accepted and a jobId. A separate column on the right shows the job status that the client reads with GET, which is not a step of the service: it is Queued at this point. A background worker then runs one job at a time and the status is Running. Step 3 validates every row with the same rules as single events; an invalid row fails on its own. Step 4 loads one snapshot per country and keeps only the contexts needed; if a snapshot is missing or the API is failing, the rows of that country fail. Step 5 processes the rows, 8 stock keys at once and the rows of one key in file order; each row goes through steps 2 to 6 of diagram 8: lock, version, PUT, record, publish. If the sink fails, the event waits in the outbox, and the outbox relay publishes the waiting events every 10 seconds, so the event sink gets one event per applied row in the end. Step 6 records each row's result as applied, skipped or failed. Step 7 finishes the job, and the counts and row results stay readable. The job ends as Completed when no row failed, CompletedWithErrors when at least one row failed, or Failed on a shutdown or an unexpected error.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#73726C"/>
+    </marker>
+  </defs>
+  <rect width="820" height="812" rx="12" fill="#FFFFFF"/>
+  <text x="24" y="34" font-size="16" font-weight="600" fill="#1F1E1D">One CSV import, from upload to the last event</text>
+  <text x="24" y="56" font-size="13" fill="#5F5E5A">POST /v1/availability/imports answers at once. A background worker does the work, and each row follows diagram 8.</text>
+
+  <rect x="590" y="186" width="220" height="566" rx="12" fill="#FAFAF7" stroke="#B4B2A9" stroke-dasharray="6 4"/>
+  <path d="M20 298 H580" fill="none" stroke="#B4B2A9" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <g font-size="12" dominant-baseline="central">
+    <text x="186" y="287" fill="#5F5E5A">the HTTP request ends: the client has its jobId</text>
+    <text x="186" y="311" font-weight="600" fill="#3C3489">background worker, one job at a time</text>
+    <text x="600" y="206" font-size="13" font-weight="600" fill="#2C2C2A">Job status the client sees</text>
+  </g>
+
+  <g font-size="12" text-anchor="middle" dominant-baseline="central">
+    <rect x="30" y="76" width="280" height="52" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="170" y="94" font-size="14" font-weight="600" fill="#2C2C2A">CSV upload arrives</text>
+    <text x="170" y="112" fill="#5F5E5A">POST /v1/availability/imports</text>
+
+    <rect x="30" y="148" width="280" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="166" font-size="14" font-weight="600" fill="#3C3489">1. Check request and header</text>
+    <text x="170" y="184" fill="#534AB7">multipart, readable, six columns</text>
+
+    <rect x="30" y="224" width="280" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="242" font-size="14" font-weight="600" fill="#3C3489">2. Create the job and queue it</text>
+    <text x="170" y="260" fill="#534AB7">queue in memory, at most 10 jobs</text>
+
+    <rect x="30" y="326" width="280" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="344" font-size="14" font-weight="600" fill="#3C3489">3. Validate every row</text>
+    <text x="170" y="362" fill="#534AB7">same rules as single events</text>
+
+    <rect x="30" y="402" width="280" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="420" font-size="14" font-weight="600" fill="#3C3489">4. Load one snapshot per country</text>
+    <text x="170" y="438" fill="#534AB7">stream it, keep the contexts needed</text>
+
+    <rect x="30" y="478" width="280" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="496" font-size="14" font-weight="600" fill="#3C3489">5. Process the rows</text>
+    <text x="170" y="514" fill="#534AB7">8 keys at once; a key's rows in file order</text>
+
+    <rect x="30" y="554" width="280" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="572" font-size="14" font-weight="600" fill="#3C3489">6. Record each row's result</text>
+    <text x="170" y="590" fill="#534AB7">applied, skipped or failed</text>
+
+    <rect x="30" y="630" width="280" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="170" y="648" font-size="14" font-weight="600" fill="#3C3489">7. Finish the job</text>
+    <text x="170" y="666" fill="#534AB7">counts and row results stay readable</text>
+
+    <rect x="330" y="148" width="250" height="52" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="455" y="166" font-size="14" font-weight="600" fill="#712B13">Rejected at once</text>
+    <text x="455" y="184" fill="#993C1D">415, 400 or 413: no job is created</text>
+
+    <rect x="330" y="224" width="250" height="52" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="455" y="242" font-size="14" font-weight="600" fill="#712B13">503 Queue full</text>
+    <text x="455" y="260" fill="#993C1D">no job: upload again later</text>
+
+    <rect x="330" y="326" width="250" height="52" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="455" y="344" font-size="14" font-weight="600" fill="#712B13">Row failed: InvalidInput</text>
+    <text x="455" y="362" fill="#993C1D">line number kept; other rows go on</text>
+
+    <rect x="330" y="402" width="250" height="52" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="455" y="420" font-size="14" font-weight="600" fill="#712B13">That country's rows fail</text>
+    <text x="455" y="438" fill="#993C1D">snapshot missing or API failing</text>
+
+    <rect x="330" y="478" width="250" height="52" rx="8" fill="#FFFFFF" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="455" y="496" font-size="14" font-weight="600" fill="#3C3489">Each row, as in diagram 8</text>
+    <text x="455" y="514" fill="#534AB7">lock, version, PUT, record, publish</text>
+
+    <rect x="330" y="554" width="250" height="52" rx="8" fill="#FAEEDA" stroke="#854F0B"/>
+    <text x="455" y="572" font-size="14" font-weight="600" fill="#633806">Event not published yet</text>
+    <text x="455" y="590" fill="#854F0B">waits in the outbox for the relay</text>
+
+    <rect x="330" y="630" width="250" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+    <text x="455" y="648" font-size="14" font-weight="600" fill="#3C3489">Outbox relay, every 10 s</text>
+    <text x="455" y="666" fill="#534AB7">publishes the waiting events</text>
+
+    <rect x="330" y="706" width="250" height="52" rx="8" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="455" y="724" font-size="14" font-weight="600" fill="#085041">Event sink</text>
+    <text x="455" y="742" fill="#0F6E56">one event per applied row, in the end</text>
+
+    <rect x="600" y="224" width="200" height="52" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="700" y="242" font-size="14" font-weight="600" fill="#2C2C2A">Queued</text>
+    <text x="700" y="260" fill="#5F5E5A">after 202 Accepted + jobId</text>
+
+    <rect x="600" y="402" width="200" height="52" rx="8" fill="#F1EFE8" stroke="#888780"/>
+    <text x="700" y="420" font-size="14" font-weight="600" fill="#2C2C2A">Running</text>
+    <text x="700" y="438" fill="#5F5E5A">processedRows goes up</text>
+
+    <text x="700" y="582" fill="#5F5E5A">ends as one of</text>
+    <rect x="600" y="594" width="200" height="44" rx="8" fill="#EAF3DE" stroke="#3B6D11"/>
+    <text x="700" y="609" font-size="13" font-weight="600" fill="#27500A">Completed</text>
+    <text x="700" y="626" fill="#3B6D11">no row failed</text>
+    <rect x="600" y="646" width="200" height="44" rx="8" fill="#FAEEDA" stroke="#854F0B"/>
+    <text x="700" y="661" font-size="13" font-weight="600" fill="#633806">CompletedWithErrors</text>
+    <text x="700" y="678" fill="#854F0B">at least one row failed</text>
+    <rect x="600" y="698" width="200" height="44" rx="8" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="700" y="713" font-size="13" font-weight="600" fill="#712B13">Failed</text>
+    <text x="700" y="730" fill="#993C1D">shutdown or unexpected error</text>
+  </g>
+
+  <g fill="none" stroke="#73726C" stroke-width="1.3">
+    <path d="M170 128 V144" marker-end="url(#arrow)"/>
+    <path d="M170 200 V220" marker-end="url(#arrow)"/>
+    <path d="M170 276 V322" marker-end="url(#arrow)"/>
+    <path d="M170 378 V398" marker-end="url(#arrow)"/>
+    <path d="M170 454 V474" marker-end="url(#arrow)"/>
+    <path d="M170 530 V550" marker-end="url(#arrow)"/>
+    <path d="M170 606 V626" marker-end="url(#arrow)"/>
+    <path d="M310 174 H326" marker-end="url(#arrow)"/>
+    <path d="M310 250 H326" marker-end="url(#arrow)"/>
+    <path d="M310 352 H326" marker-end="url(#arrow)"/>
+    <path d="M310 428 H326" marker-end="url(#arrow)"/>
+    <path d="M310 504 H326" marker-end="url(#arrow)"/>
+    <path d="M455 530 V550" marker-end="url(#arrow)"/>
+    <path d="M455 606 V626" marker-end="url(#arrow)"/>
+    <path d="M455 682 V702" marker-end="url(#arrow)"/>
+    <path d="M700 276 V398" marker-end="url(#arrow)"/>
+    <path d="M700 454 V566" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="11" fill="#5F5E5A" dominant-baseline="central">
+    <text x="463" y="541">if the sink fails</text>
+  </g>
+
+  <g font-size="12" fill="#5F5E5A">
+    <rect x="24" y="780" width="12" height="12" rx="2" fill="#EEEDFE" stroke="#534AB7"/>
+    <text x="42" y="786" dominant-baseline="central">Service step</text>
+    <rect x="134" y="780" width="12" height="12" rx="2" fill="#F1EFE8" stroke="#888780"/>
+    <text x="152" y="786" dominant-baseline="central">Client side</text>
+    <rect x="236" y="780" width="12" height="12" rx="2" fill="#FAECE7" stroke="#993C1D"/>
+    <text x="254" y="786" dominant-baseline="central">Rejected or failed</text>
+    <rect x="376" y="780" width="12" height="12" rx="2" fill="#FAEEDA" stroke="#854F0B"/>
+    <text x="394" y="786" dominant-baseline="central">Waiting, or finished with errors</text>
+    <rect x="594" y="780" width="12" height="12" rx="2" fill="#E1F5EE" stroke="#0F6E56"/>
+    <text x="612" y="786" dominant-baseline="central">Dependency</text>
+  </g>
+</svg>
